@@ -101,11 +101,11 @@ function settle_match(match_id):
 Note loser stakes are NOT re-deducted — they were taken when the bet was placed.
 Winners get their proportional slice credited. Net effect for a winner = payout − stake.
 
-## Draw handling (open decision)
+## Draw handling 
 Group games can draw. Options:
-- **Treat draw as a push**: if result = 'draw', refund all bets. Simplest; recommended v1.
+- **Treat draw as a push**: if result = 'draw', refund all bets. Simplest; v1.
+Possible addition for v2:
 - Add 'draw' as a third pick. More interesting, more UI. Defer.
-Recommend: draw = refund-all (push) for v1, so picks stay team1/team2 only.
 
 ## RLS (Supabase)
 - `profiles`: a user reads all (leaderboard) but updates none directly — balance only
