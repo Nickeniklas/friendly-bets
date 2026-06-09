@@ -68,16 +68,32 @@ nowhere; fine, it's a fun game). A healthy pool (≥300) is never topped up.
 
 ## Settlement — `settle_match(match_id)` RPC
 
-MUST be one atomic transaction. Run once per match (guard on status).
+MUST be one atomic transaction. Idempotent: if the match is already `settled`, do nothing
+and return. Runs once effectively per match even though the sync job may call it repeatedly.
+
+Triggered automatically by the sync job (every 2–3h), NOT by an admin button. The job
+selects matches to settle with all of:
+- `result` is set (not null), and
+- `kickoff_at` is more than 3 hours in the past (avoid provisional/half-time results), and
+- `status` is not already `settled`.
 
 ```
 function settle_match(match_id):
-  load match; assert status = 'closed' (or 'scheduled' past kickoff) and result is set
+  load match
+  if match.status = 'settled': return        # idempotent guard — never double-pay
+  assert result is set and kickoff_at < now() - 3h
   bets = all bets for match_id
   pot = sum(b.stake for b in bets)
   if pot < 300: pot = 300
 
-  winning_pick = result   # 'team1' or 'team2'  (draw: see note)
+  if result == 'draw':
+      # push — refund every stake, no winners (v1: no 'draw' pick exists)
+      for b in bets:
+          profiles[b.user_id].points_balance += b.stake
+          b.payout = b.stake; b.outcome = 'refunded'
+      match.status = 'settled'; match.settled_at = now(); return
+
+  winning_pick = result   # 'team1' or 'team2'
   winners = [b for b in bets if b.pick == winning_pick]
   winning_stake = sum(b.stake for b in winners)
 
@@ -101,11 +117,16 @@ function settle_match(match_id):
 Note loser stakes are NOT re-deducted — they were taken when the bet was placed.
 Winners get their proportional slice credited. Net effect for a winner = payout − stake.
 
-## Draw handling 
-Group games can draw. Options:
-- **Treat draw as a push**: if result = 'draw', refund all bets. Simplest; v1.
-Possible addition for v2:
-- Add 'draw' as a third pick. More interesting, more UI. Defer.
+## Draw handling (decided — push for v1)
+Group games can draw. For v1, a draw is a **push**: if `result = 'draw'`, refund every
+bet on the match (same path as the no-winner push). Picks stay team1/team2 only — there
+is no 'draw' pick in v1.
+
+In the settlement function this means: if `result = 'draw'`, refund all stakes and skip
+the proportional-payout branch entirely.
+
+v2 idea: add 'draw' as a real third pick with its own pool side. Deferred — it adds UI
+and turns settlement into a three-way split.
 
 ## RLS (Supabase)
 - `profiles`: a user reads all (leaderboard) but updates none directly — balance only

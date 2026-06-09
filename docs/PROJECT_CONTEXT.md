@@ -11,8 +11,11 @@ is exactly why the betting design needs no oddsmaking).
 ## Stack (settled)
 - Next.js on Vercel
 - Supabase — Postgres + Auth (magic link) + realtime
-- openfootball worldcup.json for fixtures + results (free, no API key, refresh 1–2×/day)
+- openfootball worldcup.json for fixtures + results (free, no API key)
 - No real odds — a parimutuel betting pool instead
+- Sync + settlement run together in a protected `/api/sync` route, triggered every 2–3h
+  by a free external scheduler (cron-job.org). Vercel Hobby cron is once-daily only, so
+  the schedule lives outside Vercel.
 
 ## How the game works
 - Everyone starts at 1000 points.
@@ -26,6 +29,8 @@ is exactly why the betting design needs no oddsmaking).
   draw is also treated as a push for v1.
 - Separate from points, an accuracy leaderboard tracks bets placed / correct / wrong /
   win rate % / streak — so the game stays meaningful even when pools are thin.
+- Settlement is automatic: the sync job settles any match with a result, kickoff >3h ago,
+  not yet settled. Idempotent, so running every 2–3h can't double-pay.
 
 ## Key decisions & why
 - Parimutuel over fixed odds: owner has no football knowledge; pool needs none, and
@@ -40,5 +45,7 @@ is exactly why the betting design needs no oddsmaking).
   explanations of non-obvious choices.
 
 ## Open items
-- Settlement trigger: manual admin action for v1 (run after results post); may automate later.
 - Whether to surface the live/implied multiplier in the UI (nice-to-have, not v1-critical).
+
+## v2 ideas
+- Draw as a real third pick (its own pool side). v1 treats a draw as a push/refund-all.

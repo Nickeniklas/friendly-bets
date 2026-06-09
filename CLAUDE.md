@@ -20,21 +20,26 @@ tricks. Explain non-obvious Next.js / Supabase choices inline.
 - A bet may be placed ONLY while match.status = 'scheduled' AND now() < kickoff_at.
   Enforce in the DB, not just the UI.
 - Stake is deducted from points_balance the instant a bet is placed.
-- Settlement (`settle_match`) is ONE atomic transaction, runs once per match (guard on
-  status), and is the only path besides bet-placement that changes a balance.
+- Settlement (`settle_match`) is ONE atomic transaction, idempotent (skips already-settled
+  matches), and is the only path besides bet-placement that changes a balance. It is called
+  automatically by the sync job, not by an admin.
 - Seed rule: at settlement, if pool < 300, treat pool as 300 (house funds the gap).
 - Push rule: if nobody picked the winning side, refund all stakes on that match.
-- Draw (group stage) = push/refund-all for v1 (picks are team1/team2 only).
+- Draw (any stage) = push/refund-all for v1 (picks are team1/team2 only; no 'draw' pick).
+  v2 may add 'draw' as a real third pick — not now.
 - Balances never change via direct client writes — only via bet insert + settlement RPC.
   Lock this down with RLS; settlement is a security-definer RPC.
 
 ## Build order
 1. Supabase schema (tables, RPC, view, RLS) — see SCHEMA.md
-2. openfootball sync (upsert into matches on external_ref)
+2. openfootball sync as a protected API route `/api/sync`: upsert into matches on
+   external_ref, then auto-settle any match with a result, kickoff >3h ago, not yet
+   settled. Triggered by external cron (cron-job.org) every 2–3h — NOT Vercel cron
+   (Hobby = once-daily only). Route requires a shared secret header.
 3. Next.js skeleton + Supabase client + magic-link auth
 4. Match list page
 5. Place-bet flow (insert + deduct, guarded)
-6. settle_match RPC + admin trigger
+6. settle_match RPC (called by the sync job; idempotent)
 7. Leaderboard + accuracy view
 8. Polish: show current pool / implied multiplier
 
@@ -46,4 +51,6 @@ tricks. Explain non-obvious Next.js / Supabase choices inline.
 
 ## Secrets
 Supabase URL + anon key in env (`.env.local`, and Vercel project env). Service-role key
-is server-only — never ship it to the client. Never commit `.env*`.
+is server-only — never ship it to the client. The `/api/sync` route checks a shared
+secret (e.g. `SYNC_SECRET`) passed by the external scheduler — store it in env, never
+commit it. Never commit `.env*`.

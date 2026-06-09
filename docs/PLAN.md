@@ -40,7 +40,8 @@ optimize for simplicity and zero running cost, not for scale or security hardeni
 | Hosting | Vercel | Zero-config Next.js deploys from a GitHub push. Free tier covers this scale comfortably. |
 | Database | Supabase (Postgres) | Postgres + auth + realtime in one free service. Realtime is handy for a live-updating scoreboard. |
 | Auth | Supabase Auth (magic link) | Family-and-friends scope: passwordless email is plenty, no password handling. |
-| Match data | openfootball worldcup.json | Free, public-domain JSON. No API key, no rate limits. Perfect for a once/twice-daily refresh. |
+| Match data | openfootball worldcup.json | Free, public-domain JSON. No API key, no rate limits. Synced every 2–3h; the same job auto-settles finished matches. |
+| Scheduling | External cron (cron-job.org) → `/api/sync` | Vercel Hobby cron is **once-per-day only**; sub-daily is Pro ($20/mo). So the sync+settle lives in a normal API route, triggered by a free external scheduler every 2–3h. Route is protected by a shared secret. |
 | Odds | None — parimutuel pool | Owner has no football knowledge; parimutuel needs none. Multipliers emerge from how people bet. Real odds aren't reliably free anyway. |
 
 Decisions are settled. Do not re-litigate without being asked.
@@ -56,35 +57,44 @@ predicts nothing; it just divides a pot.
 ## Architecture sketch
 
 ```
-openfootball JSON ──(daily sync job)──> Supabase: matches table
-                                              │
-  Browser (Next.js) ──auth──> Supabase Auth   │
-        │                                      │
+openfootball JSON ──(sync job, every 2–3h)──> Supabase: matches table
+                                              │   same job then auto-settles:
+  Browser (Next.js) ──auth──> Supabase Auth   │   for each match with a result,
+        │                                      │   kickoff >3h ago, not yet settled
         │  place bet (deduct now) ──> bets table + profiles.points_balance
-        │                                      │
+        │                                      │        │
         │  view matches/leaderboard <── matches / profiles / accuracy view
-        │                                      │
-   admin triggers settlement ──> settle_match() RPC (atomic):
-        pot = sum(stakes); if pot < 300 -> pot = 300 (house seeds the gap)
-        winners split pot by stake; losers already paid
-        if no winning bettor -> refund all stakes (push)
-        flip match.status -> settled
+        │                                      │        ▼
+        │                              settle_match() RPC (atomic):
+        │                                pot = sum(stakes); if pot < 300 -> pot = 300
+        │                                winners split pot by stake; losers already paid
+        │                                if no winning bettor -> refund all stakes (push)
+        │                                flip match.status -> settled (idempotent: skip if already)
 ```
 
 ## Build order (bottom-up)
 
 1. Supabase project + schema (tables, RPC, views, RLS). See `SCHEMA.md`.
-2. openfootball sync — a script/route that pulls JSON and upserts into `matches`.
+2. openfootball sync — a protected API route (`/api/sync`) that pulls JSON, upserts into
+   `matches`, then auto-settles any match with a result, kickoff >3h ago, not yet settled.
+   Triggered by an external scheduler (cron-job.org, free) every 2–3h, NOT Vercel cron
+   (Hobby is once-daily only). Route checks a shared secret so only the scheduler can run it.
 3. Next.js skeleton + Supabase client + magic-link auth.
 4. Match list page (read matches).
 5. Place-bet flow (insert bet + deduct balance, guarded by match status).
-6. Settlement RPC + an admin trigger for it.
+6. Settlement RPC (called by the sync job in step 2; idempotent).
 7. Leaderboard (points) + accuracy stats view.
 8. Polish: show current pool / implied multiplier on each match.
 
 ## Open items
 - Exact "thin pool" trigger is decided: top up to **300**. (Settled.)
-- Who can trigger settlement, and how (manual admin button vs scheduled)? Lean manual
-  for v1 — owner runs it after results post. Revisit if tedious.
-- Draw handling in group stage: a match can end in a draw. Decide whether "winner/loser"
-  betting treats a draw as its own pick or as a push. (See SCHEMA note.)
+- Settlement is automatic: the sync job (every 2–3h) settles any match with a result,
+  kickoff >3h ago, not yet settled. Idempotent — already-settled matches are skipped.
+  (Settled.)
+- Draw handling is decided: a group-stage draw is a **push** for v1 — all bets on that
+  match are refunded. Picks are team1/team2 only. (Settled.)
+
+## v2 ideas (not now)
+- Draw as a third pick — let people bet on a draw, with its own pool side. Adds UI and
+  changes settlement (three sides instead of two). Deferred to v2.
+- Surface the live/implied multiplier on each match.
