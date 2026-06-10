@@ -74,15 +74,18 @@ openfootball JSON ──(sync job, every 2–3h)──> Supabase: matches table
 
 ## Build order (bottom-up)
 
-1. Supabase project + schema (tables, RPC, views, RLS). See `SCHEMA.md`.
-2. openfootball sync — a protected API route (`/api/sync`) that pulls JSON, upserts into
+Status detail lives in `CLAUDE.md` ("Status" section) — kept current there so it
+doesn't drift across two files.
+
+1. DONE — Supabase project + schema (tables, RPC, views, RLS). See `SCHEMA.md`.
+2. DONE locally, not deployed — openfootball sync — a protected API route (`/api/sync`) that pulls JSON, upserts into
    `matches`, then auto-settles any match with a result, kickoff >3h ago, not yet settled.
    Triggered by an external scheduler (cron-job.org, free) every 2–3h, NOT Vercel cron
    (Hobby is once-daily only). Route checks a shared secret so only the scheduler can run it.
-3. Next.js skeleton + Supabase client + magic-link auth.
+3. PARTIAL — Next.js skeleton done; Supabase client helpers + magic-link auth not built yet.
 4. Match list page (read matches).
 5. Place-bet flow (insert bet + deduct balance, guarded by match status).
-6. Settlement RPC (called by the sync job in step 2; idempotent).
+6. DONE — Settlement RPC (built as part of step 1; called by the sync job in step 2; idempotent).
 7. Leaderboard (points) + accuracy stats view.
 8. Polish: show current pool / implied multiplier on each match.
 

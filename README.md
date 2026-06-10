@@ -1,1 +1,44 @@
 # friendly-bets
+
+A non-commercial World Cup 2026 prediction game for family & friends. See `CLAUDE.md`
+and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and current status.
+
+## Status
+
+- Supabase schema, RPC, view, and RLS are live (see `supabase/migrations/`).
+- `/api/sync` (`src/app/api/sync/route.ts`) is built and tested locally — pulls
+  openfootball fixtures/results, upserts `matches`, and auto-settles via `settle_match`.
+- Not yet done: Vercel deployment, Vercel env vars, and the cron-job.org schedule that
+  triggers `/api/sync` every 2-3h. See `CLAUDE.md` "Status" for the full picture and
+  what's next.
+
+## Getting started
+
+```bash
+npm install
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000).
+
+Copy `.env.local.example` to `.env.local` and fill in your Supabase project values
+(see that file for where to find each one — `.env.local` is gitignored).
+
+The Supabase schema lives in `supabase/migrations/` — apply it with the Supabase CLI:
+
+```bash
+supabase login
+supabase link --project-ref <your-project-ref>
+supabase db push
+```
+
+### Testing /api/sync locally
+
+With `npm run dev` running, in another terminal:
+
+```bash
+curl http://localhost:3000/api/sync -H "Authorization: Bearer <your-SYNC_SECRET>"
+```
+
+Expect `{"synced": <count>, "settled": [...]}`. The `matches` table should populate
+with World Cup 2026 fixtures.

@@ -32,9 +32,17 @@ One row per game, synced from openfootball.
 | result | text | `team1` / `team2` / `draw` / null until played |
 | settled_at | timestamptz | null until settled |
 
-`external_ref`: openfootball doesn't ship a clean id, so build one deterministically,
-e.g. `"{date}-{team1}-{team2}"`. Upsert on this so a daily re-sync updates rows instead
-of duplicating them.
+`external_ref`: openfootball doesn't ship a clean id, so build one deterministically
+and upsert on it so re-syncs update rows instead of duplicating them.
+
+Implemented strategy (`src/lib/openfootball.ts`):
+- Knockout matches (have a stable `num` field) → `wc2026-m{num}`.
+- Group-stage matches (stable team names from day one, no `num`) →
+  `{date}-{team1}-{team2}` slugified.
+
+Knockout `team1`/`team2` start as placeholders (`"2A"`, `"W74"`) that get overwritten
+with real team names as the bracket resolves — keying on team names there would create
+duplicate rows on re-sync, hence the `num`-based key for knockouts.
 
 ### `bets`
 One row per bet. Stake is deducted from balance the moment this row is created.
@@ -135,3 +143,8 @@ and turns settlement into a three-way split.
   (so the pool is visible).
 - `matches`: read for all; writes only by the sync job / admin (service role).
 - Settlement runs as a `security definer` RPC so normal users can't touch balances.
+
+Implementation note: RLS policies alone aren't sufficient — Postgres also requires
+baseline table GRANTs for `anon`/`authenticated`/`service_role` (a separate permission
+layer checked *before* RLS; `service_role`'s BYPASSRLS doesn't skip it). See
+`supabase/migrations/20260610120000_grants.sql`.
