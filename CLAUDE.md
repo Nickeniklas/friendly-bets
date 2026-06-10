@@ -4,20 +4,31 @@ Operating brief for Claude Code. Read `docs/PLAN.md` and `docs/SCHEMA.md` for fu
 
 @AGENTS.md
 
-## Status (as of 2026-06-10)
+## Status (as of 2026-06-11)
 - Step 1 (Supabase schema, RPC, view, RLS) — DONE. Migrations applied and verified
   against the live project: `supabase/migrations/20260609000000_initial_schema.sql`
   and `supabase/migrations/20260610120000_grants.sql`.
-- Step 2 (`/api/sync` route) — DONE and tested locally against the live Supabase
-  project: synced 104 matches from openfootball, 0 settled (tournament starts
-  2026-06-11, nothing past the 3h-post-kickoff threshold yet).
+- Step 2 (`/api/sync` route) — DONE. Deployed to Vercel (project linked to
+  `Nickeniklas/friendly-bets` on GitHub for auto-deploys on push to `main`),
+  env vars set (Supabase URL/anon/service-role keys + `SYNC_SECRET`), and
+  verified live at `https://friendly-bets-rust.vercel.app/api/sync`
+  (`{"synced":104,"settled":[]}`). cron-job.org is set up and calling this URL
+  on a schedule (200 OK confirmed) — step 2 is fully complete.
 - Step 3 (Next.js skeleton) — partially done. TS/App Router/Tailwind/ESLint
   scaffold + `@supabase/supabase-js` are in place. Magic-link auth NOT built yet.
-- Not yet done: Vercel deployment + env vars, cron-job.org schedule for
-  `/api/sync` (every 2-3h, header `Authorization: Bearer <SYNC_SECRET>`).
 
-Next session: pick up step 3 (Supabase client helpers + magic-link auth), or
-finish step-2 deployment/cron wiring first — owner's call.
+Next session: pick up step 3 (Supabase client helpers + magic-link auth).
+
+## Cron setup (DONE — reference only)
+1. Go to https://cron-job.org, sign up / log in.
+2. Create a new cronjob:
+   - URL: `https://friendly-bets-rust.vercel.app/api/sync`
+   - Schedule: every 2-3 hours
+   - Request method: GET
+   - Add a custom header: `Authorization: Bearer <SYNC_SECRET>` (value from
+     `.env.local` / Vercel project env vars — do not commit it anywhere)
+3. Save, then use cron-job.org's "Run now" / test execution to confirm it
+   returns `{"synced": <n>, "settled": [...]}` with HTTP 200.
 
 ## What we're building
 A non-commercial World Cup 2026 prediction game for family & friends. No real money.
@@ -49,11 +60,12 @@ tricks. Explain non-obvious Next.js / Supabase choices inline.
 
 ## Build order
 1. DONE — Supabase schema (tables, RPC, view, RLS) — see SCHEMA.md
-2. DONE (locally) — openfootball sync as a protected API route `/api/sync`: upsert into
+2. DONE — openfootball sync as a protected API route `/api/sync`: upsert into
    matches on external_ref, then auto-settle any match with a result, kickoff >3h ago, not yet
-   settled. Triggered by external cron (cron-job.org) every 2–3h — NOT Vercel cron
-   (Hobby = once-daily only). Route requires a shared secret header. Still need:
-   Vercel deploy + env vars + the cron-job.org schedule itself.
+   settled. Deployed to Vercel (`https://friendly-bets-rust.vercel.app`), env vars set,
+   verified live. Triggered by external cron (cron-job.org) every 2–3h — NOT Vercel cron
+   (Hobby = once-daily only). Route requires a shared secret header. cron-job.org schedule
+   is set up and confirmed working (200 OK).
 3. PARTIAL — Next.js skeleton done (TS, App Router, Tailwind, ESLint,
    `@supabase/supabase-js`). Supabase client helpers + magic-link auth not built yet.
 4. Match list page

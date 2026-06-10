@@ -6,11 +6,12 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
 ## Status
 
 - Supabase schema, RPC, view, and RLS are live (see `supabase/migrations/`).
-- `/api/sync` (`src/app/api/sync/route.ts`) is built and tested locally — pulls
-  openfootball fixtures/results, upserts `matches`, and auto-settles via `settle_match`.
-- Not yet done: Vercel deployment, Vercel env vars, and the cron-job.org schedule that
-  triggers `/api/sync` every 2-3h. See `CLAUDE.md` "Status" for the full picture and
-  what's next.
+- `/api/sync` (`src/app/api/sync/route.ts`) is deployed to Vercel and verified live at
+  `https://friendly-bets-rust.vercel.app/api/sync` — pulls openfootball fixtures/results,
+  upserts `matches`, and auto-settles via `settle_match`. The Vercel project is connected
+  to this GitHub repo for auto-deploys on push to `main`.
+- The cron-job.org schedule that triggers `/api/sync` every 2-3h is set up and
+  confirmed working (200 OK). Step 2 is complete — see `CLAUDE.md` for what's next.
 
 ## Getting started
 

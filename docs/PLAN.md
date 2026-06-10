@@ -78,10 +78,11 @@ Status detail lives in `CLAUDE.md` ("Status" section) — kept current there so 
 doesn't drift across two files.
 
 1. DONE — Supabase project + schema (tables, RPC, views, RLS). See `SCHEMA.md`.
-2. DONE locally, not deployed — openfootball sync — a protected API route (`/api/sync`) that pulls JSON, upserts into
+2. DONE — openfootball sync — a protected API route (`/api/sync`) that pulls JSON, upserts into
    `matches`, then auto-settles any match with a result, kickoff >3h ago, not yet settled.
-   Triggered by an external scheduler (cron-job.org, free) every 2–3h, NOT Vercel cron
-   (Hobby is once-daily only). Route checks a shared secret so only the scheduler can run it.
+   Deployed to Vercel and triggered by an external scheduler (cron-job.org, free) every
+   2–3h, NOT Vercel cron (Hobby is once-daily only). Route checks a shared secret so only
+   the scheduler can run it.
 3. PARTIAL — Next.js skeleton done; Supabase client helpers + magic-link auth not built yet.
 4. Match list page (read matches).
 5. Place-bet flow (insert bet + deduct balance, guarded by match status).
