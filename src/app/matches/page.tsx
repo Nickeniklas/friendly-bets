@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { placeBet } from "./actions";
+import { BetButton } from "./bet-button";
 
 type Match = {
   id: string;
@@ -135,16 +136,11 @@ function BetSection({
         name="stake"
         min={1}
         max={balance ?? undefined}
-        defaultValue={10}
+        defaultValue={100}
         required
         className="w-16 rounded border border-zinc-300 bg-transparent px-1 py-0.5 dark:border-zinc-700"
       />
-      <button
-        type="submit"
-        className="rounded bg-foreground px-2 py-1 text-background"
-      >
-        Bet
-      </button>
+      <BetButton />
     </form>
   );
 }
