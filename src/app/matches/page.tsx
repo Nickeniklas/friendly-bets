@@ -218,9 +218,14 @@ export default async function MatchesPage({
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 p-8">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Matches</h1>
-        <Link href="/" className="text-sm underline">
-          Home
-        </Link>
+        <div className="flex gap-4">
+          <Link href="/leaderboard" className="text-sm underline">
+            Leaderboard
+          </Link>
+          <Link href="/" className="text-sm underline">
+            Home
+          </Link>
+        </div>
       </div>
 
       {user && (

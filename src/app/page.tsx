@@ -24,6 +24,9 @@ export default async function Home() {
         <Link href="/matches" className="text-sm underline">
           View matches
         </Link>
+        <Link href="/leaderboard" className="text-sm underline">
+          Leaderboard
+        </Link>
       </div>
     );
   }
@@ -47,6 +50,9 @@ export default async function Home() {
         className="rounded bg-foreground px-4 py-2 text-background"
       >
         View matches
+      </Link>
+      <Link href="/leaderboard" className="text-sm underline">
+        Leaderboard
       </Link>
       <form action={signOut}>
         <button className="rounded border border-zinc-300 px-4 py-2 dark:border-zinc-700">

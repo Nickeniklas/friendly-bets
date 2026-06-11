@@ -95,7 +95,8 @@ doesn't drift across two files.
    `src/app/matches/actions.ts` (`placeBet`) just inserts into `bets` — the
    step-1 DB triggers/constraints do all enforcement.
 6. DONE — Settlement RPC (built as part of step 1; called by the sync job in step 2; idempotent).
-7. Leaderboard (points) + accuracy stats view.
+7. DONE — Leaderboard (points) + accuracy stats view. `src/app/leaderboard/page.tsx`,
+   linked from the home page and `/matches`.
 8. Polish: show current pool / implied multiplier on each match.
 
 ## Open items

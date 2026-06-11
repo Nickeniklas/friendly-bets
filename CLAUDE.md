@@ -62,10 +62,21 @@ Operating brief for Claude Code. Read `docs/PLAN.md` and `docs/SCHEMA.md` for fu
 
   Owner confirmed the full flow works end-to-end on the live site
   (bet placed, balance deducted, "Your bet: ..." shown).
+- Step 7 (leaderboard + accuracy view) — DONE. New page
+  `src/app/leaderboard/page.tsx` is a Server Component (RLS allows anon read,
+  so no auth needed) with two sections: a Points leaderboard (`profiles`
+  ordered by `points_balance` desc) and an Accuracy table (the existing
+  `accuracy` view — W-L, win %, streak — ordered by win rate then bets
+  placed), with a friendly empty state until any match settles. Linked from
+  the home page (both logged-in/out states) and from `/matches`. Lint/build
+  pass; smoke-tested on the dev server (renders the one existing profile at
+  800 pts; accuracy shows the empty state since nothing has settled yet).
+- Vercel Web Analytics enabled: `@vercel/analytics` installed and
+  `<Analytics />` added to `src/app/layout.tsx`.
 
-Next session: step 7 (leaderboard + accuracy view) — see `docs/PLAN.md` /
-`docs/SCHEMA.md` for the `accuracy` view shape and `profiles.points_balance`
-for the points leaderboard. No known open bugs.
+Next session: step 8 (polish — show current pool / implied multiplier on
+each match in `src/app/matches/page.tsx`, using `bets.stake` summed per
+match/pick). No known open bugs.
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.
