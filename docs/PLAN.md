@@ -90,7 +90,10 @@ doesn't drift across two files.
    `NEXT_PUBLIC_SITE_URL` to Vercel project env vars (see CLAUDE.md).
 4. DONE — Match list page (read matches). `src/app/matches/page.tsx`, grouped
    by kickoff date, linked from the home page.
-5. Place-bet flow (insert bet + deduct balance, guarded by match status).
+5. DONE — Place-bet flow (insert bet + deduct balance, guarded by match status).
+   `src/app/matches/page.tsx` shows a pick/stake form per bettable match;
+   `src/app/matches/actions.ts` (`placeBet`) just inserts into `bets` — the
+   step-1 DB triggers/constraints do all enforcement.
 6. DONE — Settlement RPC (built as part of step 1; called by the sync job in step 2; idempotent).
 7. Leaderboard (points) + accuracy stats view.
 8. Polish: show current pool / implied multiplier on each match.

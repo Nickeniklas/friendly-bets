@@ -34,8 +34,27 @@ Operating brief for Claude Code. Read `docs/PLAN.md` and `docs/SCHEMA.md` for fu
   label, kickoff time, and status (`Upcoming` / `Awaiting result` / settled
   result). Linked from the home page (logged-in and logged-out states).
   Lint/build/dev smoke-tested locally (104 matches render correctly).
+- Step 5 (place-bet flow) — DONE (pending live smoke test). On
+  `src/app/matches/page.tsx`, each bettable match (status = `scheduled` AND
+  now() < kickoff_at) shows a small inline form (pick team1/team2 + stake)
+  for logged-in users, a "Log in to bet" link for logged-out visitors, and
+  "Your bet: ..." (with outcome/payout once settled) if the user already bet
+  on that match. The form posts to the `placeBet` server action
+  (`src/app/matches/actions.ts`), which just inserts into `bets` — all
+  enforcement (bet window, balance check, one-bet-per-match) is done by the
+  existing DB triggers/constraints from the step-1 migration, and Postgres
+  errors are translated into friendly messages via `?error=` query param
+  (mirrors `/login`'s `?message=`/`?error=` pattern). Logged-in users also
+  see their points balance at the top of the page. Lint/build pass and the
+  page smoke-tested locally for a logged-out visitor (104 matches, all show
+  "Log in to bet" since the tournament hasn't started). NOT YET tested
+  end-to-end with a logged-in user placing a real bet (insufficient balance,
+  duplicate bet, bet-window-closed error paths) — do that next session or
+  ask the owner to try it on the live site after deploy.
 
-Next session: pick up step 5 (place-bet flow).
+Next session: live-test the place-bet flow end-to-end (happy path + the
+three error paths above), then move on to step 7 (leaderboard + accuracy
+view).
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.
