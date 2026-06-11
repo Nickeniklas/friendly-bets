@@ -23,14 +23,19 @@ Operating brief for Claude Code. Read `docs/PLAN.md` and `docs/SCHEMA.md` for fu
   customized `token_hash`/`type` template if custom SMTP is set up later.
   Supabase dashboard Authentication -> URL Configuration (Site URL +
   Redirect URLs) is DONE.
-  REMAINING STEP (Vercel dashboard, not code): add `NEXT_PUBLIC_SITE_URL`
-  to the Vercel project's Environment Variables, set to
-  `https://friendly-bets-rust.vercel.app`, then redeploy. Without it,
-  `emailRedirectTo` in `src/app/login/actions.ts` resolves to
-  `undefined/auth/confirm` in production and the magic link will be broken
-  on the live site (it already works locally via `.env.local`).
+  `NEXT_PUBLIC_SITE_URL` is set in Vercel's project Environment Variables
+  (Production + Preview), and a redeploy ran after it was added — verified
+  via `vercel env ls` and `vercel inspect` (the live `friendly-bets-rust.vercel.app`
+  alias points to a deployment built after the env var was set). Step 3 is
+  fully complete.
+- Step 4 (match list page) — DONE. `src/app/matches/page.tsx` is a Server
+  Component that reads `matches` (RLS allows anon read, so no auth needed),
+  groups fixtures by kickoff date (UTC), and shows team names, stage/group
+  label, kickoff time, and status (`Upcoming` / `Awaiting result` / settled
+  result). Linked from the home page (logged-in and logged-out states).
+  Lint/build/dev smoke-tested locally (104 matches render correctly).
 
-Next session: pick up step 4 (match list page).
+Next session: pick up step 5 (place-bet flow).
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.

@@ -21,6 +21,9 @@ export default async function Home() {
         >
           Log in
         </Link>
+        <Link href="/matches" className="text-sm underline">
+          View matches
+        </Link>
       </div>
     );
   }
@@ -39,6 +42,12 @@ export default async function Home() {
         Welcome, {profile?.display_name ?? user.email}! Balance:{" "}
         {profile?.points_balance ?? "—"} points.
       </p>
+      <Link
+        href="/matches"
+        className="rounded bg-foreground px-4 py-2 text-background"
+      >
+        View matches
+      </Link>
       <form action={signOut}>
         <button className="rounded border border-zinc-300 px-4 py-2 dark:border-zinc-700">
           Sign out

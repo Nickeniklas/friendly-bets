@@ -88,7 +88,8 @@ doesn't drift across two files.
    default email template (no custom SMTP needed) via PKCE `code` exchange.
    Supabase Authentication -> URL Configuration is set up. Remaining: add
    `NEXT_PUBLIC_SITE_URL` to Vercel project env vars (see CLAUDE.md).
-4. Match list page (read matches).
+4. DONE — Match list page (read matches). `src/app/matches/page.tsx`, grouped
+   by kickoff date, linked from the home page.
 5. Place-bet flow (insert bet + deduct balance, guarded by match status).
 6. DONE — Settlement RPC (built as part of step 1; called by the sync job in step 2; idempotent).
 7. Leaderboard (points) + accuracy stats view.
