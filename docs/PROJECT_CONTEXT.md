@@ -3,11 +3,12 @@
 Self-contained summary — paste into Claude project knowledge so fresh chats start informed.
 
 ## Current status (see CLAUDE.md for full detail)
-Steps 1-3 of the build order are DONE: Supabase schema/RLS/RPC, the `/api/sync`
-sync+settle job (deployed to Vercel, cron-job.org triggers it every 2-3h), and the
+Steps 1-4 of the build order are DONE: Supabase schema/RLS/RPC, the `/api/sync`
+sync+settle job (deployed to Vercel, cron-job.org triggers it every 2-3h), the
 Next.js skeleton with Supabase client helpers + magic-link auth (`/login`,
-`/auth/confirm`, sign-out, session-refresh middleware). Next up: step 4, the match
-list page.
+`/auth/confirm`, sign-out, session-refresh middleware, `NEXT_PUBLIC_SITE_URL`
+verified in production), and the match list page (`/matches`, grouped by kickoff
+date, no login required). Next up: step 5, the place-bet flow.
 
 ## Project
 A fun, non-commercial prediction/betting site for family & friends, for the 2026 FIFA

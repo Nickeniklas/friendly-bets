@@ -89,7 +89,8 @@ tricks. Explain non-obvious Next.js / Supabase choices inline.
    server) + session-refresh middleware (`src/middleware.ts`) + magic-link auth
    (`/login`, `/auth/confirm`, sign-out). Home page shows logged-in state +
    points balance.
-4. Match list page
+4. DONE — Match list page (read matches). `src/app/matches/page.tsx`, grouped
+   by kickoff date, linked from the home page.
 5. Place-bet flow (insert + deduct, guarded)
 6. DONE — settle_match RPC (built as part of step 1; called by the sync job; idempotent)
 7. Leaderboard + accuracy view

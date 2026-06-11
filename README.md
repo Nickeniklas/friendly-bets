@@ -14,8 +14,12 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
   confirmed working (200 OK). Step 2 is complete.
 - Magic-link auth is built: `/login` sends a sign-in email, `/auth/confirm` completes
   it, and the home page shows the logged-in user's name + points balance with a sign-out
-  button. Session cookies are kept fresh by `src/middleware.ts`. Step 3 is complete —
-  see `CLAUDE.md` for what's next (step 4: match list page).
+  button. Session cookies are kept fresh by `src/middleware.ts`. `NEXT_PUBLIC_SITE_URL`
+  is set in Vercel and verified live — step 3 is fully complete.
+- The match list page (`/matches`) shows all 104 World Cup 2026 fixtures grouped by
+  kickoff date (UTC), with stage/group, kickoff time, and status. Readable by anyone
+  (no login needed) and linked from the home page. Step 4 is complete — see
+  `CLAUDE.md` for what's next (step 5: place-bet flow).
 
 ## Getting started
 
@@ -59,7 +63,12 @@ No email template edits are needed — the default "Magic Link" email works as-i
 (`/auth/confirm` handles Supabase's PKCE `?code=...` redirect). Visit `/login`,
 enter an email, and click the link from the email to sign in.
 
-**Still needed for production:** add `NEXT_PUBLIC_SITE_URL` to the Vercel project's
-Environment Variables (set to `https://friendly-bets-rust.vercel.app`) and redeploy.
-Locally it's already set in `.env.local`. Without it on Vercel, the magic-link email
-sent from the live site will redirect to `undefined/auth/confirm` and fail.
+`NEXT_PUBLIC_SITE_URL` is set in both `.env.local` (local dev) and the Vercel
+project's Environment Variables (production), so `emailRedirectTo` resolves
+correctly in both environments.
+
+### Match list
+
+`/matches` lists all synced fixtures, grouped by kickoff date (UTC). It's a
+read-only Server Component — `matches` is readable by anyone via RLS, so no
+login is required to view it.
