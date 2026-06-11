@@ -18,8 +18,13 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
   is set in Vercel and verified live — step 3 is fully complete.
 - The match list page (`/matches`) shows all 104 World Cup 2026 fixtures grouped by
   kickoff date (UTC), with stage/group, kickoff time, and status. Readable by anyone
-  (no login needed) and linked from the home page. Step 4 is complete — see
-  `CLAUDE.md` for what's next (step 5: place-bet flow).
+  (no login needed) and linked from the home page. Step 4 is complete.
+- Place-bet flow is live: logged-in users can pick a side and a stake (default
+  100) on any open match from `/matches`. The bet is inserted via a server
+  action; DB triggers handle the bet-window check, balance deduction, and
+  one-bet-per-match rule. Verified working end-to-end on the live site. Step 5
+  is complete — see `CLAUDE.md` for what's next (step 7: leaderboard +
+  accuracy view).
 
 ## Getting started
 
@@ -72,3 +77,14 @@ correctly in both environments.
 `/matches` lists all synced fixtures, grouped by kickoff date (UTC). It's a
 read-only Server Component — `matches` is readable by anyone via RLS, so no
 login is required to view it.
+
+### Place a bet
+
+On `/matches`, any match that's still `scheduled` and hasn't kicked off yet
+shows a pick (team1/team2) + stake form for logged-in users. Submitting it
+inserts a row into `bets`; the DB triggers from
+`supabase/migrations/20260609000000_initial_schema.sql` (plus the
+`SECURITY DEFINER` fix in `20260611000000_...`) enforce the bet window,
+deduct the stake from `points_balance`, and block a second bet on the same
+match. Once you've bet on a match it shows "Your bet: ..." instead of the
+form, including the outcome/payout after `settle_match` runs.

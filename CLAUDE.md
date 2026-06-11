@@ -34,31 +34,38 @@ Operating brief for Claude Code. Read `docs/PLAN.md` and `docs/SCHEMA.md` for fu
   label, kickoff time, and status (`Upcoming` / `Awaiting result` / settled
   result). Linked from the home page (logged-in and logged-out states).
   Lint/build/dev smoke-tested locally (104 matches render correctly).
-- Step 5 (place-bet flow) — code DONE. Live smoke test caught a bug
-  ("permission denied for table profiles" on first bet attempt), fixed in
-  `supabase/migrations/20260611000000_fix_deduct_stake_security_definer.sql`
-  and applied to the live DB via `npx supabase db push` — ready to re-test.
-  On
+- Step 5 (place-bet flow) — DONE, verified live by the owner. On
   `src/app/matches/page.tsx`, each bettable match (status = `scheduled` AND
-  now() < kickoff_at) shows a small inline form (pick team1/team2 + stake)
-  for logged-in users, a "Log in to bet" link for logged-out visitors, and
-  "Your bet: ..." (with outcome/payout once settled) if the user already bet
-  on that match. The form posts to the `placeBet` server action
-  (`src/app/matches/actions.ts`), which just inserts into `bets` — all
-  enforcement (bet window, balance check, one-bet-per-match) is done by the
-  existing DB triggers/constraints from the step-1 migration, and Postgres
-  errors are translated into friendly messages via `?error=` query param
-  (mirrors `/login`'s `?message=`/`?error=` pattern). Logged-in users also
-  see their points balance at the top of the page. Lint/build pass and the
-  page smoke-tested locally for a logged-out visitor (104 matches, all show
-  "Log in to bet" since the tournament hasn't started). NOT YET tested
-  end-to-end with a logged-in user placing a real bet (insufficient balance,
-  duplicate bet, bet-window-closed error paths) — do that next session or
-  ask the owner to try it on the live site after deploy.
+  now() < kickoff_at) shows a small inline form (pick team1/team2 + stake,
+  default/placeholder stake 100) for logged-in users, a "Log in to bet" link
+  for logged-out visitors, and "Your bet: ..." (with outcome/payout once
+  settled) if the user already bet on that match. The form posts to the
+  `placeBet` server action (`src/app/matches/actions.ts`), which just inserts
+  into `bets` — all enforcement (bet window, balance check, one-bet-per-match)
+  is done by the existing DB triggers/constraints. Postgres errors are
+  translated into friendly messages via `?error=` (mirrors `/login`'s
+  `?message=`/`?error=` pattern). Logged-in users see their points balance at
+  the top of the page.
 
-Next session: live-test the place-bet flow end-to-end (happy path + the
-three error paths above), then move on to step 7 (leaderboard + accuracy
-view).
+  Two bugs found during live testing, both fixed and deployed:
+  - "permission denied for table profiles" on first bet — `deduct_stake_on_bet()`
+    needed `SECURITY DEFINER` (see Gotchas). Migration
+    `20260611000000_fix_deduct_stake_security_definer.sql` applied live via
+    `npx supabase db push`.
+  - Both `/login` and the bet form had no pending-state feedback, so a slow
+    round-trip invited a double-click → confusing errors (stale magic-link
+    code-verifier; duplicate-bet constraint). Fixed with small client
+    components using `useFormStatus`: `src/app/login/submit-button.tsx`
+    ("Sending...") and `src/app/matches/bet-button.tsx` ("Placing...").
+    This `useFormStatus` pattern is now the convention for any form
+    backed by a server action — use it for new forms too.
+
+  Owner confirmed the full flow works end-to-end on the live site
+  (bet placed, balance deducted, "Your bet: ..." shown).
+
+Next session: step 7 (leaderboard + accuracy view) — see `docs/PLAN.md` /
+`docs/SCHEMA.md` for the `accuracy` view shape and `profiles.points_balance`
+for the points leaderboard. No known open bugs.
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.
@@ -114,7 +121,9 @@ tricks. Explain non-obvious Next.js / Supabase choices inline.
    points balance.
 4. DONE — Match list page (read matches). `src/app/matches/page.tsx`, grouped
    by kickoff date, linked from the home page.
-5. Place-bet flow (insert + deduct, guarded)
+5. DONE — Place-bet flow (insert + deduct, guarded). `src/app/matches/page.tsx`
+   (form per bettable match) + `src/app/matches/actions.ts` (`placeBet`).
+   Verified live end-to-end.
 6. DONE — settle_match RPC (built as part of step 1; called by the sync job; idempotent)
 7. Leaderboard + accuracy view
 8. Polish: show current pool / implied multiplier
@@ -164,6 +173,14 @@ tricks. Explain non-obvious Next.js / Supabase choices inline.
   (mirrors the `SECURITY DEFINER` pattern already used by `handle_new_user`
   and `settle_match`). Same caution applies to any future trigger that writes
   to a table the calling role doesn't have a GRANT/RLS policy for.
+- Convention: any `<form action={serverAction}>` whose action does a real
+  network round-trip (DB write, Supabase Auth call, etc.) should have its
+  submit button as a small `"use client"` component using
+  `useFormStatus().pending` to show a "Verb-ing..." label and disable the
+  button. See `src/app/login/submit-button.tsx` and
+  `src/app/matches/bet-button.tsx` for the pattern. Without this, slow
+  round-trips look unresponsive and invite double-submits, which surface as
+  confusing errors (stale magic-link, duplicate-bet constraint, etc.).
 - An `AGENTS.md` previously existed at the repo root with instructions like
   "this is NOT the Next.js you know... read node_modules/next/dist/docs
   before writing any code". It was auto-generated by `create-next-app` as
