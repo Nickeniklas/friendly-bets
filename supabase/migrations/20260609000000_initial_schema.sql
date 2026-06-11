@@ -133,6 +133,8 @@ CREATE TRIGGER enforce_bet_window
 CREATE OR REPLACE FUNCTION public.deduct_stake_on_bet()
 RETURNS trigger
 LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
 AS $$
 BEGIN
   UPDATE public.profiles
