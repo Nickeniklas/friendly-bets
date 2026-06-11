@@ -2,8 +2,6 @@
 
 Operating brief for Claude Code. Read `docs/PLAN.md` and `docs/SCHEMA.md` for full detail.
 
-@AGENTS.md
-
 ## Status (as of 2026-06-11)
 - Step 1 (Supabase schema, RPC, view, RLS) — DONE. Migrations applied and verified
   against the live project: `supabase/migrations/20260609000000_initial_schema.sql`
@@ -14,10 +12,20 @@ Operating brief for Claude Code. Read `docs/PLAN.md` and `docs/SCHEMA.md` for fu
   verified live at `https://friendly-bets-rust.vercel.app/api/sync`
   (`{"synced":104,"settled":[]}`). cron-job.org is set up and calling this URL
   on a schedule (200 OK confirmed) — step 2 is fully complete.
-- Step 3 (Next.js skeleton) — partially done. TS/App Router/Tailwind/ESLint
-  scaffold + `@supabase/supabase-js` are in place. Magic-link auth NOT built yet.
+- Step 3 (Next.js skeleton) — DONE. Supabase client helpers
+  (`src/lib/supabase/client.ts`, `src/lib/supabase/server.ts`), session-refresh
+  middleware (`src/middleware.ts`), and magic-link auth (`/login`,
+  `/auth/confirm`, sign-out action) are built. Home page shows logged-in state
+  + points balance. Lint/build/dev smoke-tested locally.
+  `/auth/confirm` handles both the default Supabase email template (PKCE
+  `?code=...` -> `exchangeCodeForSession`, no custom SMTP needed) and a
+  customized `token_hash`/`type` template if custom SMTP is set up later.
+  REMAINING MANUAL STEP (Supabase dashboard, not code): under Authentication ->
+  URL Configuration, set Site URL to the Vercel URL and add
+  `http://localhost:3000/**` and the Vercel URL to Redirect URLs (no email
+  template edits needed — the default "Magic Link" template works as-is).
 
-Next session: pick up step 3 (Supabase client helpers + magic-link auth).
+Next session: pick up step 4 (match list page).
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.
@@ -66,8 +74,11 @@ tricks. Explain non-obvious Next.js / Supabase choices inline.
    verified live. Triggered by external cron (cron-job.org) every 2–3h — NOT Vercel cron
    (Hobby = once-daily only). Route requires a shared secret header. cron-job.org schedule
    is set up and confirmed working (200 OK).
-3. PARTIAL — Next.js skeleton done (TS, App Router, Tailwind, ESLint,
-   `@supabase/supabase-js`). Supabase client helpers + magic-link auth not built yet.
+3. DONE — Next.js skeleton (TS, App Router, Tailwind, ESLint) + Supabase client
+   helpers (`src/lib/supabase/client.ts` browser, `src/lib/supabase/server.ts`
+   server) + session-refresh middleware (`src/middleware.ts`) + magic-link auth
+   (`/login`, `/auth/confirm`, sign-out). Home page shows logged-in state +
+   points balance.
 4. Match list page
 5. Place-bet flow (insert + deduct, guarded)
 6. DONE — settle_match RPC (built as part of step 1; called by the sync job; idempotent)
@@ -89,13 +100,24 @@ tricks. Explain non-obvious Next.js / Supabase choices inline.
   didn't get Supabase's usual auto-grants, causing "permission denied for table X".
   Fixed in `supabase/migrations/20260610120000_grants.sql` — if new tables are added
   later, grant there too.
+- Magic-link auth: Supabase's *default* email service won't let you edit email
+  templates (Authentication -> Email Templates shows "Set up custom SMTP to edit
+  templates"). No need — `@supabase/ssr` defaults to the PKCE flow, so the default
+  "Magic Link" email's link goes through Supabase's hosted `/auth/v1/verify` and
+  redirects back to `emailRedirectTo` with `?code=...`. `/auth/confirm/route.ts`
+  exchanges that via `exchangeCodeForSession` (it also accepts `token_hash`/`type`
+  as a fallback if custom SMTP + a customized template are set up later). Only
+  manual step needed is Authentication -> URL Configuration: Site URL = the
+  Vercel URL, and Redirect URLs include both the Vercel URL and
+  `http://localhost:3000/**`.
 
 ## Secrets
-Supabase URL, anon key, service-role key, and SYNC_SECRET live in `.env.local`
-(copy from `.env.local.example`; same vars go into Vercel project env when deployed).
-Service-role key is server-only — never ship it to the client. The `/api/sync` route
-checks a shared secret (`SYNC_SECRET`) passed by the external scheduler — store it in
-env, never commit it. Never commit `.env*.local`.
+Supabase URL, anon key, service-role key, SYNC_SECRET, and NEXT_PUBLIC_SITE_URL live
+in `.env.local` (copy from `.env.local.example`; same vars go into Vercel project env
+when deployed — set NEXT_PUBLIC_SITE_URL to the Vercel URL there). Service-role key is
+server-only — never ship it to the client. The `/api/sync` route checks a shared secret
+(`SYNC_SECRET`) passed by the external scheduler — store it in env, never commit it.
+Never commit `.env*.local`.
 
 Note: Supabase's dashboard now shows new "Publishable"/"Secret" key formats by default,
 with the old `anon`/`service_role` JWTs under "Legacy API Keys" — both work identically

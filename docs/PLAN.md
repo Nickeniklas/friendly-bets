@@ -83,7 +83,12 @@ doesn't drift across two files.
    Deployed to Vercel and triggered by an external scheduler (cron-job.org, free) every
    2–3h, NOT Vercel cron (Hobby is once-daily only). Route checks a shared secret so only
    the scheduler can run it.
-3. PARTIAL — Next.js skeleton done; Supabase client helpers + magic-link auth not built yet.
+3. DONE — Next.js skeleton + Supabase client helpers + magic-link auth (`/login`,
+   `/auth/confirm`, session-refresh middleware, sign-out). Works with Supabase's
+   default email template (no custom SMTP needed) via PKCE `code` exchange.
+   Manual Supabase dashboard step remains: Authentication -> URL Configuration —
+   set Site URL to the Vercel URL and add it plus `http://localhost:3000/**` to
+   Redirect URLs.
 4. Match list page (read matches).
 5. Place-bet flow (insert bet + deduct balance, guarded by match status).
 6. DONE — Settlement RPC (built as part of step 1; called by the sync job in step 2; idempotent).

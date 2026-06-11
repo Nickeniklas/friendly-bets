@@ -2,6 +2,13 @@
 
 Self-contained summary — paste into Claude project knowledge so fresh chats start informed.
 
+## Current status (see CLAUDE.md for full detail)
+Steps 1-3 of the build order are DONE: Supabase schema/RLS/RPC, the `/api/sync`
+sync+settle job (deployed to Vercel, cron-job.org triggers it every 2-3h), and the
+Next.js skeleton with Supabase client helpers + magic-link auth (`/login`,
+`/auth/confirm`, sign-out, session-refresh middleware). Next up: step 4, the match
+list page.
+
 ## Project
 A fun, non-commercial prediction/betting site for family & friends, for the 2026 FIFA
 World Cup. No real money, ever. v1 scope: view matches, bet winner/loser, live-ish
