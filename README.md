@@ -23,8 +23,15 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
   100) on any open match from `/matches`. The bet is inserted via a server
   action; DB triggers handle the bet-window check, balance deduction, and
   one-bet-per-match rule. Verified working end-to-end on the live site. Step 5
-  is complete — see `CLAUDE.md` for what's next (step 7: leaderboard +
-  accuracy view).
+  is complete.
+- Leaderboard (`/leaderboard`) shows a points-balance ranking and an accuracy
+  table (W-L, win %, streak) from the `accuracy` view. Linked from the home
+  page and `/matches`. Step 7 is complete — see `CLAUDE.md` for what's next
+  (step 8: show pool size / implied multiplier per match).
+- Vercel Web Analytics is enabled (`@vercel/analytics`).
+- Magic-link emails go through custom SMTP (Brevo) — Supabase's default
+  shared mailer caps at 2 emails/hour, which isn't enough for multiple
+  people signing in. See `CLAUDE.md` ("Email / SMTP") for setup details.
 
 ## Getting started
 
@@ -68,6 +75,10 @@ No email template edits are needed — the default "Magic Link" email works as-i
 (`/auth/confirm` handles Supabase's PKCE `?code=...` redirect). Visit `/login`,
 enter an email, and click the link from the email to sign in.
 
+Magic-link emails are sent via custom SMTP (Brevo) — see `CLAUDE.md` ("Email
+/ SMTP") for why and how it's configured. First-time recipients should check
+their spam folder, since the sending address has no reputation yet.
+
 `NEXT_PUBLIC_SITE_URL` is set in both `.env.local` (local dev) and the Vercel
 project's Environment Variables (production), so `emailRedirectTo` resolves
 correctly in both environments.
@@ -88,3 +99,11 @@ inserts a row into `bets`; the DB triggers from
 deduct the stake from `points_balance`, and block a second bet on the same
 match. Once you've bet on a match it shows "Your bet: ..." instead of the
 form, including the outcome/payout after `settle_match` runs.
+
+### Leaderboard
+
+`/leaderboard` is a read-only Server Component (anyone can view, no login
+required) with two sections: a points-balance ranking from `profiles`, and
+an accuracy table (bets won/lost, win %, current streak) from the `accuracy`
+view. The accuracy section shows an empty-state message until at least one
+match has been settled.
