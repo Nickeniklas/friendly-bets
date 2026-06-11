@@ -34,11 +34,11 @@ Operating brief for Claude Code. Read `docs/PLAN.md` and `docs/SCHEMA.md` for fu
   label, kickoff time, and status (`Upcoming` / `Awaiting result` / settled
   result). Linked from the home page (logged-in and logged-out states).
   Lint/build/dev smoke-tested locally (104 matches render correctly).
-- Step 5 (place-bet flow) — code DONE; live smoke test caught a bug
+- Step 5 (place-bet flow) — code DONE. Live smoke test caught a bug
   ("permission denied for table profiles" on first bet attempt), fixed in
   `supabase/migrations/20260611000000_fix_deduct_stake_security_definer.sql`
-  — **NOT YET applied to the live DB** (`npx supabase db push` pending; needs
-  to be run before re-testing). On
+  and applied to the live DB via `npx supabase db push` — ready to re-test.
+  On
   `src/app/matches/page.tsx`, each bettable match (status = `scheduled` AND
   now() < kickoff_at) shows a small inline form (pick team1/team2 + stake)
   for logged-in users, a "Log in to bet" link for logged-out visitors, and
