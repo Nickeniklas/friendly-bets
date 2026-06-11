@@ -50,7 +50,7 @@ with World Cup 2026 fixtures.
 
 ### Auth (magic link)
 
-One-time setup in the Supabase dashboard — Authentication -> URL Configuration:
+One-time setup in the Supabase dashboard — Authentication -> URL Configuration — DONE:
 
 - **Site URL**: your deployed app URL (e.g. `https://friendly-bets-rust.vercel.app`)
 - **Redirect URLs**: add that same URL plus `http://localhost:3000/**`
@@ -58,3 +58,8 @@ One-time setup in the Supabase dashboard — Authentication -> URL Configuration
 No email template edits are needed — the default "Magic Link" email works as-is
 (`/auth/confirm` handles Supabase's PKCE `?code=...` redirect). Visit `/login`,
 enter an email, and click the link from the email to sign in.
+
+**Still needed for production:** add `NEXT_PUBLIC_SITE_URL` to the Vercel project's
+Environment Variables (set to `https://friendly-bets-rust.vercel.app`) and redeploy.
+Locally it's already set in `.env.local`. Without it on Vercel, the magic-link email
+sent from the live site will redirect to `undefined/auth/confirm` and fail.

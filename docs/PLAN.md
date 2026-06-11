@@ -86,9 +86,8 @@ doesn't drift across two files.
 3. DONE — Next.js skeleton + Supabase client helpers + magic-link auth (`/login`,
    `/auth/confirm`, session-refresh middleware, sign-out). Works with Supabase's
    default email template (no custom SMTP needed) via PKCE `code` exchange.
-   Manual Supabase dashboard step remains: Authentication -> URL Configuration —
-   set Site URL to the Vercel URL and add it plus `http://localhost:3000/**` to
-   Redirect URLs.
+   Supabase Authentication -> URL Configuration is set up. Remaining: add
+   `NEXT_PUBLIC_SITE_URL` to Vercel project env vars (see CLAUDE.md).
 4. Match list page (read matches).
 5. Place-bet flow (insert bet + deduct balance, guarded by match status).
 6. DONE — Settlement RPC (built as part of step 1; called by the sync job in step 2; idempotent).
