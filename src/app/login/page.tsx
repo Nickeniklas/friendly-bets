@@ -1,4 +1,5 @@
 import { signInWithMagicLink } from "./actions";
+import { SubmitButton } from "./submit-button";
 
 export default async function LoginPage({
   searchParams,
@@ -27,12 +28,7 @@ export default async function LoginPage({
           className="rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700 dark:bg-black"
         />
 
-        <button
-          type="submit"
-          className="rounded bg-foreground px-4 py-2 text-background"
-        >
-          Send magic link
-        </button>
+        <SubmitButton />
 
         {message && <p className="text-sm text-green-600">{message}</p>}
         {error && <p className="text-sm text-red-600">{error}</p>}
