@@ -2,7 +2,7 @@
 
 Operating brief for Claude Code. Read `docs/PLAN.md` and `docs/SCHEMA.md` for full detail.
 
-## Status (as of 2026-06-11)
+## Status (as of 2026-06-12)
 - Step 1 (Supabase schema, RPC, view, RLS) — DONE. Migrations applied and verified
   against the live project: `supabase/migrations/20260609000000_initial_schema.sql`
   and `supabase/migrations/20260610120000_grants.sql`.
@@ -78,10 +78,20 @@ Operating brief for Claude Code. Read `docs/PLAN.md` and `docs/SCHEMA.md` for fu
   details. Verified live: a direct `/auth/v1/otp` test returned HTTP 200
   (was HTTP 500 rate-limited before) and the email was received (landed in
   spam — expected for a brand-new sending domain).
+- Step 8 (polish — pool/multiplier display) — DONE. `src/app/matches/page.tsx`
+  now fetches every bet's `match_id, pick, stake` (RLS allows anon read)
+  alongside the matches query, sums stakes per match/pick into a
+  `poolsByMatch` map, and renders "Pool: N pts · TeamA Xx · TeamB Yx" on each
+  match card via a new `PoolInfo` component. The pot and per-side multiplier
+  (`pot / side_stake`, seeded to 300 if the total pool is thin) mirror
+  `settle_match`'s payout math exactly, so the numbers shown match what would
+  actually be paid out if the match settled right now. A side with no stake
+  shows "—" (would be a push/refund if it won). Lint/build pass; smoke-tested
+  on the dev server.
 
-Next session: step 8 (polish — show current pool / implied multiplier on
-each match in `src/app/matches/page.tsx`, using `bets.stake` summed per
-match/pick). No known open bugs.
+This was the last item in the build order (`docs/PLAN.md` steps 1-8 all DONE).
+No known open bugs. Future work would be v2 ideas (see `docs/PLAN.md`), not
+part of the original plan.
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.

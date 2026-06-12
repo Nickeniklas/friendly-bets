@@ -22,6 +22,8 @@ type Bet = {
   outcome: string | null;
 };
 
+type Pool = { team1: number; team2: number };
+
 // Maps the short stage codes stored in the DB (see SCHEMA.md / openfootball.ts
 // `mapStage`) to friendly labels. Falls back to the raw code for anything
 // unrecognized so nothing is hidden if openfootball adds a new round name.
@@ -72,6 +74,46 @@ function statusLabel(match: Match): string {
   }
   if (match.status === "closed") return "Awaiting result";
   return "Upcoming";
+}
+
+// Mirrors the payout math in `settle_match` (see
+// 20260609000000_initial_schema.sql) so the displayed numbers match what
+// would actually happen if the match settled right now:
+//   - pot = sum(all stakes), seeded up to 300 if the pool is thin (the house
+//     funds the gap, same as at settlement).
+//   - For a side with stake S, settle_match pays each winning bet
+//     `ROUND(stake / S * pot)` — i.e. every point on that side is multiplied
+//     by `pot / S`. That's the "implied multiplier" shown here.
+//   - A side with no stake (`null` multiplier) would be a push/refund if it
+//     won, so there's no multiplier to show.
+function computePool(stakes: Pool): {
+  pot: number;
+  mult1: number | null;
+  mult2: number | null;
+} {
+  const pot = Math.max(stakes.team1 + stakes.team2, 300);
+  return {
+    pot,
+    mult1: stakes.team1 > 0 ? pot / stakes.team1 : null,
+    mult2: stakes.team2 > 0 ? pot / stakes.team2 : null,
+  };
+}
+
+function formatMultiplier(mult: number | null): string {
+  return mult === null ? "—" : `${mult.toFixed(2)}x`;
+}
+
+// Shows the current pool size and the implied payout multiplier for each
+// side, so bettors can see how the parimutuel odds are shaping up.
+function PoolInfo({ match, pool }: { match: Match; pool: Pool }) {
+  const { pot, mult1, mult2 } = computePool(pool);
+
+  return (
+    <p className="text-xs text-zinc-500">
+      Pool: {pot} pts · {match.team1} {formatMultiplier(mult1)} ·{" "}
+      {match.team2} {formatMultiplier(mult2)}
+    </p>
+  );
 }
 
 // The bet-placement form, the user's existing bet on this match, or a
@@ -163,12 +205,16 @@ export default async function MatchesPage({
     data: { user },
   } = await supabase.auth.getUser();
 
-  // RLS allows everyone (including logged-out visitors) to read matches,
-  // so this page works without auth.
-  const { data: matches, error } = await supabase
-    .from("matches")
-    .select("id, team1, team2, kickoff_at, group_label, stage, status, result")
-    .order("kickoff_at", { ascending: true });
+  // RLS allows everyone (including logged-out visitors) to read matches and
+  // bets, so this page — and the pool/multiplier info below — works without
+  // auth.
+  const [{ data: matches, error }, { data: allBets }] = await Promise.all([
+    supabase
+      .from("matches")
+      .select("id, team1, team2, kickoff_at, group_label, stage, status, result")
+      .order("kickoff_at", { ascending: true }),
+    supabase.from("bets").select("match_id, pick, stake"),
+  ]);
 
   if (error) {
     return (
@@ -176,6 +222,14 @@ export default async function MatchesPage({
         Failed to load matches: {error.message}
       </div>
     );
+  }
+
+  // Sum every bettor's stake per match/pick, for the pool/multiplier display.
+  const poolsByMatch = new Map<string, Pool>();
+  for (const bet of allBets ?? []) {
+    const pool = poolsByMatch.get(bet.match_id) ?? { team1: 0, team2: 0 };
+    pool[bet.pick as "team1" | "team2"] += bet.stake;
+    poolsByMatch.set(bet.match_id, pool);
   }
 
   // For logged-in users, fetch their points balance and any bets they've
@@ -276,6 +330,10 @@ export default async function MatchesPage({
                     </span>
                   </div>
                 </div>
+                <PoolInfo
+                  match={match}
+                  pool={poolsByMatch.get(match.id) ?? { team1: 0, team2: 0 }}
+                />
                 <BetSection
                   match={match}
                   now={now}

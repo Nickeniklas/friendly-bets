@@ -97,7 +97,11 @@ doesn't drift across two files.
 6. DONE — Settlement RPC (built as part of step 1; called by the sync job in step 2; idempotent).
 7. DONE — Leaderboard (points) + accuracy stats view. `src/app/leaderboard/page.tsx`,
    linked from the home page and `/matches`.
-8. Polish: show current pool / implied multiplier on each match.
+8. DONE — Polish: show current pool / implied multiplier on each match.
+   `src/app/matches/page.tsx` fetches all bets' `match_id, pick, stake`
+   alongside the matches query (RLS allows anon read), sums stakes per
+   match/pick, and shows "Pool: N pts · TeamA Xx · TeamB Yx" on each match
+   card, mirroring `settle_match`'s pot/seed-to-300 and payout-multiplier math.
 
 ## Open items
 - Exact "thin pool" trigger is decided: top up to **300**. (Settled.)
@@ -110,4 +114,3 @@ doesn't drift across two files.
 ## v2 ideas (not now)
 - Draw as a third pick — let people bet on a draw, with its own pool side. Adds UI and
   changes settlement (three sides instead of two). Deferred to v2.
-- Surface the live/implied multiplier on each match.
