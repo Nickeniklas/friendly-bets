@@ -25,5 +25,10 @@ export async function signInWithMagicLink(formData: FormData) {
     redirect(`/login?error=${encodeURIComponent(error.message)}`);
   }
 
-  redirect("/login?message=Check your email for a login link");
+  redirect(
+    "/login?message=" +
+      encodeURIComponent(
+        "Check your email for a login link. Can't find it? Check your spam/junk folder — first-time emails from us often land there.",
+      ),
+  );
 }

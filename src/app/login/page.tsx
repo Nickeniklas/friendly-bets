@@ -32,6 +32,12 @@ export default async function LoginPage({
 
         {message && <p className="text-sm text-green-600">{message}</p>}
         {error && <p className="text-sm text-red-600">{error}</p>}
+
+        <p className="text-xs text-zinc-500 dark:text-zinc-500">
+          Tip: the login email sometimes lands in spam or trash, especially
+          the first time. If you don&apos;t see it in your inbox within a
+          minute, check there.
+        </p>
       </form>
     </div>
   );
