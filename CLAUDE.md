@@ -24,6 +24,13 @@ Post-v1 polish:
   reputation yet (commit `a85216a`).
 - `/matches` now shows a small flag next to each team name (`src/components/flag.tsx`,
   `src/lib/flags.ts`, SVGs in `public/flags/` — see README "Team flags").
+- Daily login bonus with streak multiplier is live: the first page load each UTC
+  day awards 100-400 points (100 + 50/day, capped at day 7 = 400; resets to 1 if a
+  day is skipped), via `claim_daily_bonus()` (migration
+  `20260613000000_daily_bonus.sql`), `claimDailyBonus()` server action
+  (`src/app/actions.ts`), and `DailyBonusToast` (`src/components/daily-bonus-toast.tsx`).
+  Home page also shows the current streak. Verified live by the owner — see
+  `docs/HISTORY.md`.
 
 No known open bugs. Anything further is a v2 idea (see `docs/PLAN.md` "v2 ideas") —
 not part of the original plan, don't start on these without being asked.
@@ -100,8 +107,15 @@ tricks. Explain non-obvious Next.js / Supabase choices inline.
   on Czech Republic (lost) and it was refunded because nobody bet on South Korea.
 - Draw (any stage) = push/refund-all for v1 (picks are team1/team2 only; no 'draw' pick).
   v2 may add 'draw' as a real third pick — not now.
-- Balances never change via direct client writes — only via bet insert + settlement RPC.
-  Lock this down with RLS; settlement is a security-definer RPC.
+- Balances never change via direct client writes — only via bet insert, settlement RPC,
+  and the daily-bonus RPC. Lock this down with RLS; settlement and the daily-bonus RPC
+  are both security-definer.
+- Daily login bonus (`claim_daily_bonus`) is awarded at most once per UTC calendar day
+  per user, via a single atomic `UPDATE ... WHERE` guard (not SELECT-then-UPDATE) —
+  this is what makes concurrent page loads/tabs safe. Streak resets to 1 if a day is
+  skipped; caps at 7 (400-point bonus). Called once per app load from a client
+  component (`DailyBonusToast`) via a Server Action (`claimDailyBonus`), not a cron
+  job — explicitly lazy/on-load.
 
 ## Build order
 All steps DONE — see `docs/PLAN.md` for the full table and `docs/HISTORY.md` for the
@@ -174,6 +188,10 @@ step-by-step build log:
   about this, and `src/app/login/actions.ts`'s post-submit success message
   repeats it — so this no longer needs to be said manually when sharing the
   link. This should improve over time as the address sends more mail.
+- `claim_daily_bonus()` is idempotent by design (date-guarded atomic UPDATE),
+  so `DailyBonusToast` (`src/components/daily-bonus-toast.tsx`) can safely
+  call it on every mount without separate "first request of the day"
+  tracking — already-claimed-today calls just return 0 and render nothing.
 
 ## Secrets
 Supabase URL, anon key, service-role key, SYNC_SECRET, and NEXT_PUBLIC_SITE_URL live

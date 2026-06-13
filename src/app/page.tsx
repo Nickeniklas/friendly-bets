@@ -34,7 +34,7 @@ export default async function Home() {
   // The profiles row is created automatically by the handle_new_user DB trigger.
   const { data: profile } = await supabase
     .from("profiles")
-    .select("display_name, points_balance")
+    .select("display_name, points_balance, streak_count")
     .eq("id", user.id)
     .single();
 
@@ -44,6 +44,9 @@ export default async function Home() {
       <p>
         Welcome, {profile?.display_name ?? user.email}! Balance:{" "}
         {profile?.points_balance ?? "—"} points.
+        {profile && profile.streak_count > 0 && (
+          <> &middot; 🔥 {profile.streak_count}-day streak</>
+        )}
       </p>
       <Link
         href="/matches"

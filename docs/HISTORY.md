@@ -152,6 +152,56 @@ Verified: `npm run build` passes, dev server renders all 48 flags with
 `200 image/svg+xml`, placeholders render no broken image. Not yet pushed —
 owner wants to push by hand after reviewing.
 
+## Post-v1 — daily login bonus with streak multiplier (2026-06-13)
+New v2-style feature (not in the original `docs/PLAN.md`): reward users for
+visiting on consecutive days. First page load of a UTC calendar day awards a
+bonus that scales with the login streak (100 / 150 / 200 / ... / 400 at day 7,
+then flat 400/day; a missed day resets the streak to 1).
+
+Design discussion before building, settled on:
+- **No cron involvement.** Considered using the existing `/api/sync` job (with
+  a shorter cron-job.org interval) to grant bonuses based on
+  `auth.users.last_sign_in_at`, but rejected — it would add latency (up to the
+  sync interval) before a bonus appears, and `last_sign_in_at` doesn't update
+  on session-token refreshes, only fresh sign-ins. Instead, a single
+  **idempotent RPC** (`claim_daily_bonus()`) does the whole check-and-award in
+  one atomic statement, safe to call on every app load.
+- **Server Action + client `useEffect`, not a direct RPC call from the root
+  layout.** A Server-Component write was considered (simpler, no extra
+  round-trip) but the owner preferred matching the existing "writes go through
+  Server Actions" convention used by `placeBet`/`signOut`/`signInWithMagicLink`.
+
+Implementation:
+- `supabase/migrations/20260613000000_daily_bonus.sql` — adds
+  `profiles.last_bonus_date` (date, null = never claimed) and
+  `profiles.streak_count` (int, default 0), plus `claim_daily_bonus()`
+  (`SECURITY DEFINER`, `SET search_path = public`, same pattern as
+  `deduct_stake_on_bet`/`settle_match`). Concurrency-safe: a single
+  `UPDATE ... WHERE (last_bonus_date IS NULL OR last_bonus_date < CURRENT_DATE)
+  ... RETURNING streak_count` — two racing calls (e.g. two tabs) can't both
+  award a bonus, since only the first matches the WHERE guard.
+- `src/app/actions.ts` (new) — `claimDailyBonus()` server action: returns 0 if
+  logged out, otherwise calls the RPC and returns the bonus awarded (0 if
+  already claimed today).
+- `src/components/daily-bonus-toast.tsx` (new) — `"use client"` component,
+  calls `claimDailyBonus()` once on mount via `useEffect`; if the result is
+  > 0, shows a self-dismissing "🔥 Day N streak — +N points!" banner (6s
+  auto-hide, manual dismiss button). At the 400-point cap, day 7 and day 8+
+  are indistinguishable from the bonus amount alone, so it falls back to a
+  generic "Streak bonus — +400 points!" label.
+- `src/app/layout.tsx` — renders `<DailyBonusToast />` in `<body>`, so it
+  mounts once per full page load across the whole app (including `/login`,
+  where it's a no-op since the user is logged out).
+- `src/app/page.tsx` — home page now also selects `streak_count` and shows
+  "· 🔥 N-day streak" next to the points balance when streak > 0. No collision
+  with the leaderboard's existing "Streak" column, which tracks a different
+  thing (consecutive correct *predictions*, from the `accuracy` view).
+
+Verified: `npm run lint` and `npm run build` pass. Migration applied live via
+`supabase db push`. Owner confirmed end-to-end on the live site — first load
+showed the day-1 toast and updated balance/streak, a reload showed no toast
+(idempotent no-op), "everything working perfectly."
+
 ## Removed: stray `AGENTS.md`
 An `AGENTS.md` previously existed at the repo root with instructions like
 "this is NOT the Next.js you know... read node_modules/next/dist/docs before

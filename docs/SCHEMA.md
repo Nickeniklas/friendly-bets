@@ -13,6 +13,8 @@ Extra game data per user. Supabase Auth owns `auth.users`; this hangs off it.
 | display_name | text | shown on leaderboard |
 | points_balance | int | starts at 1000 |
 | created_at | timestamptz | default now() |
+| last_bonus_date | date | null until first claim; UTC date of last daily-bonus claim |
+| streak_count | int | consecutive daily-bonus claims, capped at 7; default 0 |
 
 New users get a row with `points_balance = 1000` (trigger on auth signup, or on first login).
 
@@ -125,6 +127,19 @@ function settle_match(match_id):
 Note loser stakes are NOT re-deducted — they were taken when the bet was placed.
 Winners get their proportional slice credited. Net effect for a winner = payout − stake.
 
+## Daily login bonus — `claim_daily_bonus()` RPC
+
+Called once per app load (client-side, via a Server Action) for the logged-in
+user. Atomically checks/updates `profiles.last_bonus_date` and `streak_count`:
+
+- Already claimed today -> returns 0 (no-op).
+- Claimed yesterday -> streak += 1 (capped at 7).
+- Otherwise (streak broken, or first-ever claim) -> streak resets to 1.
+
+Bonus = `100 + (streak - 1) * 50`, capped at 400 (day 7+). Added to
+`points_balance` in the same statement. Dates are UTC (`CURRENT_DATE`),
+consistent with how match times are displayed elsewhere in the app.
+
 ## Draw handling (decided — push for v1)
 Group games can draw. For v1, a draw is a **push**: if `result = 'draw'`, refund every
 bet on the match (same path as the no-winner push). Picks stay team1/team2 only — there
@@ -138,7 +153,7 @@ and turns settlement into a three-way split.
 
 ## RLS (Supabase)
 - `profiles`: a user reads all (leaderboard) but updates none directly — balance only
-  changes via bet placement and settlement RPC.
+  changes via bet placement, settlement RPC, and the daily-bonus RPC.
 - `bets`: a user inserts only their own (and only on a bettable match); reads all
   (so the pool is visible).
 - `matches`: read for all; writes only by the sync job / admin (service role).

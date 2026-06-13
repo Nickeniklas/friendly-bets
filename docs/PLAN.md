@@ -110,6 +110,10 @@ and fixed) is in `docs/HISTORY.md`.
   `docs/HISTORY.md` and `CLAUDE.md` ("Email / SMTP").
 - Team flags on `/matches` (2026-06-13) — small flag next to each team name, via
   flag-icons SVGs in `public/flags/`. See `docs/HISTORY.md` and README ("Team flags").
+- Daily login bonus with streak multiplier (2026-06-13) — first page load each UTC
+  day awards 100-400 points based on a login streak (capped at 7 days), via
+  `claim_daily_bonus()` RPC + a toast on every page. See `docs/HISTORY.md` and
+  README ("Daily login bonus").
 
 ## Open items
 - Exact "thin pool" trigger is decided: top up to **300**. (Settled.)

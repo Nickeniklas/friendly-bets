@@ -38,6 +38,9 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
   reminder to check spam/junk for the magic-link email.
 - Team flags are shown next to team names on `/matches` (see "Team flags"
   below).
+- Daily login bonus with streak multiplier: the first time you load the app
+  each day, you get a points bonus that scales with your login streak (see
+  "Daily login bonus" below).
 
 No known open bugs. Anything further is a v2 idea — see `docs/PLAN.md`.
 
@@ -130,3 +133,22 @@ not in the map — currently just the ~64 unresolved knockout-bracket
 placeholders (`"1A"`, `"W74"`, etc.), which get real country names as the
 bracket plays out. If a placeholder resolves to a country not yet in
 `TEAM_FLAG_CODES`, add it there and re-run the copy script.
+
+### Daily login bonus
+
+The first time a logged-in user loads the app on a given UTC calendar day,
+`claim_daily_bonus()` (a `SECURITY DEFINER` RPC, see
+`supabase/migrations/20260613000000_daily_bonus.sql`) atomically awards a
+points bonus and updates their streak:
+
+- Day 1 = 100 points, day 2 = 150, ... +50/day up to day 7 = 400, then flat
+  400/day until the streak breaks.
+- Missing a day resets the streak to 1 (back to a 100-point bonus).
+
+The RPC is idempotent (a no-op returning 0 if already claimed today), so it's
+safe to call on every page load. It's triggered client-side:
+`DailyBonusToast` (`src/components/daily-bonus-toast.tsx`) calls the
+`claimDailyBonus()` server action (`src/app/actions.ts`) once on mount, and
+shows a self-dismissing "🔥 Day N streak — +N points!" banner if a bonus was
+awarded. The home page (`/`) also shows the current streak next to the points
+balance.

@@ -13,6 +13,11 @@ pool/multiplier display, and team flags per match), and the leaderboard +
 accuracy page (`/leaderboard`). No known open bugs. The full step-by-step
 build log is in `docs/HISTORY.md`.
 
+Post-v1: a daily login bonus with streak multiplier is also live —
+`claim_daily_bonus()` RPC awards 100-400 points on the first page load each
+UTC day (streak-based, capped at day 7), shown via a toast and the home
+page's streak display.
+
 ## Project
 A fun, non-commercial prediction/betting site for family & friends, for the 2026 FIFA
 World Cup. No real money, ever. v1 scope: view matches, bet winner/loser, live-ish
