@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { Flag } from "@/components/flag";
 import { placeBet } from "./actions";
 import { BetButton } from "./bet-button";
 
@@ -309,8 +310,10 @@ export default async function MatchesPage({
               >
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex flex-col gap-1">
-                    <span className="font-medium">
+                    <span className="flex items-center gap-2 font-medium">
+                      <Flag team={match.team1} />
                       {match.team1} vs {match.team2}
+                      <Flag team={match.team2} />
                     </span>
                     <span className="text-xs text-zinc-500">
                       {STAGE_LABELS[match.stage] ?? match.stage}

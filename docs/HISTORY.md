@@ -118,6 +118,40 @@ sharing the link with friends, added a UI reminder on `/login`
 post-submit success message (`src/app/login/actions.ts`) now also says to
 check spam/junk. Lint passes. Commit `a85216a`.
 
+## Push-rule clarification: lone bet on the losing side gets refunded (2026-06-13)
+Owner asked why a *lost* bet (50pts on Czech Republic, South Korea won) showed as
+"refunded" rather than just lost. Answer: it was the only bet on the match, and
+nobody bet on South Korea (the winning side), so `v_winning_stake = 0` in
+`settle_match` and the existing push-rule branch (refund everyone) fired — same
+code path as "nobody picked the winner." Working as designed per the push rule in
+this file's "Hard rules / invariants"; no code change. Added a clarifying note to
+that rule since it can look like a bug from the UI alone.
+
+## Post-v1 — team flags on `/matches` (2026-06-13)
+Added small flag images next to team names on `/matches`, sourced from the
+[flag-icons](https://flagicons.lipis.dev/) npm package (MIT-licensed SVGs):
+
+- `src/lib/flags.ts` — `TEAM_FLAG_CODES`, a hand-built map from each of the 48 real
+  WC2026 country names (confirmed by fetching openfootball's `worldcup.json` and
+  diffing all distinct `team1`/`team2` values against the 64 unresolved bracket
+  placeholders like `"1A"`/`"W74"`) to flag-icons' lowercase ISO codes (England/
+  Scotland use `gb-eng`/`gb-sct`, which flag-icons provides alongside the standard
+  ISO set).
+- `scripts/copy-flags.mjs` — copies the 48 needed SVGs from
+  `node_modules/flag-icons/flags/4x3/` into `public/flags/` (checked into the repo
+  as static assets, so the app doesn't depend on `node_modules` at runtime). Re-run
+  this and add the new code to both `TEAM_FLAG_CODES` and `FLAG_CODES` in the script
+  if a knockout placeholder later resolves to a country not already covered.
+- `src/components/flag.tsx` — `Flag` component, looks up the code and renders an
+  `<Image unoptimized>` (Next's image optimizer rejects SVGs by default; these are
+  static/trusted so `unoptimized` is the right opt-out, not a workaround). Renders
+  nothing for unmapped team names (the placeholders).
+- Wired into `src/app/matches/page.tsx` next to each team name.
+
+Verified: `npm run build` passes, dev server renders all 48 flags with
+`200 image/svg+xml`, placeholders render no broken image. Not yet pushed —
+owner wants to push by hand after reviewing.
+
 ## Removed: stray `AGENTS.md`
 An `AGENTS.md` previously existed at the repo root with instructions like
 "this is NOT the Next.js you know... read node_modules/next/dist/docs before

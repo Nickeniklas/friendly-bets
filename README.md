@@ -36,6 +36,8 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
   people signing in. See `CLAUDE.md` ("Email / SMTP") for setup details.
   Since the sending address has no domain reputation yet, `/login` shows a
   reminder to check spam/junk for the magic-link email.
+- Team flags are shown next to team names on `/matches` (see "Team flags"
+  below).
 
 No known open bugs. Anything further is a v2 idea — see `docs/PLAN.md`.
 
@@ -115,3 +117,16 @@ required) with two sections: a points-balance ranking from `profiles`, and
 an accuracy table (bets won/lost, win %, current streak) from the `accuracy`
 view. The accuracy section shows an empty-state message until at least one
 match has been settled.
+
+### Team flags
+
+`/matches` shows a small flag next to each team name. `src/lib/flags.ts` maps
+the 48 real WC2026 country names (as they appear in openfootball's
+`team1`/`team2`) to [flag-icons](https://flagicons.lipis.dev/) codes; the SVGs
+themselves live in `public/flags/` (copied from the `flag-icons` npm package
+by `scripts/copy-flags.mjs`, which is also how to add a flag later). The
+`Flag` component (`src/components/flag.tsx`) renders nothing for team names
+not in the map — currently just the ~64 unresolved knockout-bracket
+placeholders (`"1A"`, `"W74"`, etc.), which get real country names as the
+bracket plays out. If a placeholder resolves to a country not yet in
+`TEAM_FLAG_CODES`, add it there and re-run the copy script.

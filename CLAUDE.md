@@ -18,9 +18,12 @@ brief current and short.
 - `/leaderboard` shows points balance + accuracy (W-L, win %, streak).
 - Vercel Web Analytics is enabled.
 
-Post-v1 polish: `/login` now shows a persistent reminder (plus a post-submit message)
-to check spam/junk for the magic-link email, since the Brevo sending address has no
-domain reputation yet (commit `a85216a`).
+Post-v1 polish:
+- `/login` now shows a persistent reminder (plus a post-submit message) to check
+  spam/junk for the magic-link email, since the Brevo sending address has no domain
+  reputation yet (commit `a85216a`).
+- `/matches` now shows a small flag next to each team name (`src/components/flag.tsx`,
+  `src/lib/flags.ts`, SVGs in `public/flags/` — see README "Team flags").
 
 No known open bugs. Anything further is a v2 idea (see `docs/PLAN.md` "v2 ideas") —
 not part of the original plan, don't start on these without being asked.
@@ -89,7 +92,12 @@ tricks. Explain non-obvious Next.js / Supabase choices inline.
   matches), and is the only path besides bet-placement that changes a balance. It is called
   automatically by the sync job, not by an admin.
 - Seed rule: at settlement, if pool < 300, treat pool as 300 (house funds the gap).
-- Push rule: if nobody picked the winning side, refund all stakes on that match.
+- Push rule: if nobody picked the winning side, refund all stakes on that match. Note
+  this applies per-side, not just "everyone": if the *only* bet on a match is on the
+  losing side (winning side has zero stake), that lone bet is refunded too — it looks
+  like "a loss got refunded" but is correct per this rule. Confirmed working as
+  designed (2026-06-13), e.g. South Korea vs Czech Republic where the only bet was 50pts
+  on Czech Republic (lost) and it was refunded because nobody bet on South Korea.
 - Draw (any stage) = push/refund-all for v1 (picks are team1/team2 only; no 'draw' pick).
   v2 may add 'draw' as a real third pick — not now.
 - Balances never change via direct client writes — only via bet insert + settlement RPC.

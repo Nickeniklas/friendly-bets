@@ -108,6 +108,8 @@ and fixed) is in `docs/HISTORY.md`.
 - Spam/trash folder reminder on `/login` (2026-06-13) — Brevo's sending address has
   no domain reputation yet, so first-time magic-link emails often land in spam. See
   `docs/HISTORY.md` and `CLAUDE.md` ("Email / SMTP").
+- Team flags on `/matches` (2026-06-13) — small flag next to each team name, via
+  flag-icons SVGs in `public/flags/`. See `docs/HISTORY.md` and README ("Team flags").
 
 ## Open items
 - Exact "thin pool" trigger is decided: top up to **300**. (Settled.)

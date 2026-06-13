@@ -8,10 +8,10 @@ build-order steps are DONE: Supabase schema/RLS/RPC (incl. `settle_match` and
 the `accuracy` view), the `/api/sync` sync+settle job (deployed to Vercel,
 cron-job.org triggers it every 2-3h), magic-link auth (`/login`,
 `/auth/confirm`, sign-out, custom SMTP via Brevo), the match list page
-(`/matches`, grouped by kickoff date, with a place-bet form and live
-pool/multiplier display per match), and the leaderboard + accuracy page
-(`/leaderboard`). No known open bugs. The full step-by-step build log is in
-`docs/HISTORY.md`.
+(`/matches`, grouped by kickoff date, with a place-bet form, live
+pool/multiplier display, and team flags per match), and the leaderboard +
+accuracy page (`/leaderboard`). No known open bugs. The full step-by-step
+build log is in `docs/HISTORY.md`.
 
 ## Project
 A fun, non-commercial prediction/betting site for family & friends, for the 2026 FIFA
