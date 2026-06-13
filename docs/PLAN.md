@@ -75,7 +75,8 @@ openfootball JSON ──(sync job, every 2–3h)──> Supabase: matches table
 ## Build order (bottom-up)
 
 Status detail lives in `CLAUDE.md` ("Status" section) — kept current there so it
-doesn't drift across two files.
+doesn't drift across two files. The full step-by-step build log (incl. bugs found
+and fixed) is in `docs/HISTORY.md`.
 
 1. DONE — Supabase project + schema (tables, RPC, views, RLS). See `SCHEMA.md`.
 2. DONE — openfootball sync — a protected API route (`/api/sync`) that pulls JSON, upserts into
@@ -102,6 +103,11 @@ doesn't drift across two files.
    alongside the matches query (RLS allows anon read), sums stakes per
    match/pick, and shows "Pool: N pts · TeamA Xx · TeamB Yx" on each match
    card, mirroring `settle_match`'s pot/seed-to-300 and payout-multiplier math.
+
+## Post-v1 polish (done)
+- Spam/trash folder reminder on `/login` (2026-06-13) — Brevo's sending address has
+  no domain reputation yet, so first-time magic-link emails often land in spam. See
+  `docs/HISTORY.md` and `CLAUDE.md` ("Email / SMTP").
 
 ## Open items
 - Exact "thin pool" trigger is decided: top up to **300**. (Settled.)

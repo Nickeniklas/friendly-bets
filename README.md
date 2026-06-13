@@ -2,36 +2,42 @@
 
 A non-commercial World Cup 2026 prediction game for family & friends. See `CLAUDE.md`
 and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and current status.
+`docs/HISTORY.md` has the detailed step-by-step build log.
 
 ## Status
 
-- Supabase schema, RPC, view, and RLS are live (see `supabase/migrations/`).
-- `/api/sync` (`src/app/api/sync/route.ts`) is deployed to Vercel and verified live at
-  `https://friendly-bets-rust.vercel.app/api/sync` — pulls openfootball fixtures/results,
-  upserts `matches`, and auto-settles via `settle_match`. The Vercel project is connected
-  to this GitHub repo for auto-deploys on push to `main`.
-- The cron-job.org schedule that triggers `/api/sync` every 2-3h is set up and
-  confirmed working (200 OK). Step 2 is complete.
+**v1 is complete and live** at `https://friendly-bets-rust.vercel.app`.
+
+- Supabase schema, RPC (`settle_match`), `accuracy` view, and RLS are live (see
+  `supabase/migrations/`).
+- `/api/sync` (`src/app/api/sync/route.ts`) is deployed to Vercel, protected by a
+  shared secret, and triggered every 2-3h by cron-job.org (200 OK confirmed) —
+  pulls openfootball fixtures/results, upserts `matches`, and auto-settles via
+  `settle_match`. The Vercel project is connected to this GitHub repo for
+  auto-deploys on push to `main`.
 - Magic-link auth is built: `/login` sends a sign-in email, `/auth/confirm` completes
   it, and the home page shows the logged-in user's name + points balance with a sign-out
   button. Session cookies are kept fresh by `src/middleware.ts`. `NEXT_PUBLIC_SITE_URL`
-  is set in Vercel and verified live — step 3 is fully complete.
+  is set in Vercel and verified live.
 - The match list page (`/matches`) shows all 104 World Cup 2026 fixtures grouped by
   kickoff date (UTC), with stage/group, kickoff time, and status. Readable by anyone
-  (no login needed) and linked from the home page. Step 4 is complete.
+  (no login needed) and linked from the home page.
 - Place-bet flow is live: logged-in users can pick a side and a stake (default
-  100) on any open match from `/matches`. The bet is inserted via a server
-  action; DB triggers handle the bet-window check, balance deduction, and
-  one-bet-per-match rule. Verified working end-to-end on the live site. Step 5
-  is complete.
+  100) on any open match from `/matches`, including a live pool size / implied
+  multiplier per side. The bet is inserted via a server action; DB triggers handle
+  the bet-window check, balance deduction, and one-bet-per-match rule. Verified
+  working end-to-end on the live site.
 - Leaderboard (`/leaderboard`) shows a points-balance ranking and an accuracy
   table (W-L, win %, streak) from the `accuracy` view. Linked from the home
-  page and `/matches`. Step 7 is complete — see `CLAUDE.md` for what's next
-  (step 8: show pool size / implied multiplier per match).
+  page and `/matches`.
 - Vercel Web Analytics is enabled (`@vercel/analytics`).
 - Magic-link emails go through custom SMTP (Brevo) — Supabase's default
   shared mailer caps at 2 emails/hour, which isn't enough for multiple
   people signing in. See `CLAUDE.md` ("Email / SMTP") for setup details.
+  Since the sending address has no domain reputation yet, `/login` shows a
+  reminder to check spam/junk for the magic-link email.
+
+No known open bugs. Anything further is a v2 idea — see `docs/PLAN.md`.
 
 ## Getting started
 
@@ -77,7 +83,9 @@ enter an email, and click the link from the email to sign in.
 
 Magic-link emails are sent via custom SMTP (Brevo) — see `CLAUDE.md` ("Email
 / SMTP") for why and how it's configured. First-time recipients should check
-their spam folder, since the sending address has no reputation yet.
+their spam folder, since the sending address has no reputation yet — `/login`
+itself now reminds users of this, so you shouldn't need to repeat it when
+sharing the link.
 
 `NEXT_PUBLIC_SITE_URL` is set in both `.env.local` (local dev) and the Vercel
 project's Environment Variables (production), so `emailRedirectTo` resolves

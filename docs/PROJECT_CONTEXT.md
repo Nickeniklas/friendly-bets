@@ -3,12 +3,15 @@
 Self-contained summary — paste into Claude project knowledge so fresh chats start informed.
 
 ## Current status (see CLAUDE.md for full detail)
-Steps 1-4 of the build order are DONE: Supabase schema/RLS/RPC, the `/api/sync`
-sync+settle job (deployed to Vercel, cron-job.org triggers it every 2-3h), the
-Next.js skeleton with Supabase client helpers + magic-link auth (`/login`,
-`/auth/confirm`, sign-out, session-refresh middleware, `NEXT_PUBLIC_SITE_URL`
-verified in production), and the match list page (`/matches`, grouped by kickoff
-date, no login required). Next up: step 5, the place-bet flow.
+**v1 is complete and live** at `https://friendly-bets-rust.vercel.app`. All 8
+build-order steps are DONE: Supabase schema/RLS/RPC (incl. `settle_match` and
+the `accuracy` view), the `/api/sync` sync+settle job (deployed to Vercel,
+cron-job.org triggers it every 2-3h), magic-link auth (`/login`,
+`/auth/confirm`, sign-out, custom SMTP via Brevo), the match list page
+(`/matches`, grouped by kickoff date, with a place-bet form and live
+pool/multiplier display per match), and the leaderboard + accuracy page
+(`/leaderboard`). No known open bugs. The full step-by-step build log is in
+`docs/HISTORY.md`.
 
 ## Project
 A fun, non-commercial prediction/betting site for family & friends, for the 2026 FIFA
@@ -51,9 +54,6 @@ is exactly why the betting design needs no oddsmaking).
 - Building in VS Code with Claude Code.
 - Owner is new to Next.js — prefers conventional, well-commented code and brief
   explanations of non-obvious choices.
-
-## Open items
-- Whether to surface the live/implied multiplier in the UI (nice-to-have, not v1-critical).
 
 ## v2 ideas
 - Draw as a real third pick (its own pool side). v1 treats a draw as a push/refund-all.
