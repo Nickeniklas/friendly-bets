@@ -1,16 +1,12 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Space_Grotesk } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { DailyBonusToast } from "@/components/daily-bonus-toast";
+import { ThemeProvider, themeScript } from "@/components/theme-provider";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const spaceGrotesk = Space_Grotesk({
+  variable: "--font-space-grotesk",
   subsets: ["latin"],
 });
 
@@ -27,11 +23,19 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${spaceGrotesk.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
+      <head>
+        {/* Sets the .dark class before first paint so there's no flash of
+            the wrong theme — see ThemeProvider. */}
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body className="min-h-full flex flex-col">
-        {children}
-        <DailyBonusToast />
+        <ThemeProvider>
+          {children}
+          <DailyBonusToast />
+        </ThemeProvider>
         <Analytics />
       </body>
     </html>

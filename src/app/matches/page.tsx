@@ -1,8 +1,8 @@
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { Flag } from "@/components/flag";
-import { placeBet } from "./actions";
-import { BetButton } from "./bet-button";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { BottomNav } from "@/components/bottom-nav";
+import { IntroCard } from "./intro-card";
+import { MatchCard, type ExistingBet } from "./match-card";
 
 type Match = {
   id: string;
@@ -57,24 +57,35 @@ const TIME_FORMAT: Intl.DateTimeFormatOptions = {
 };
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-GB", DATE_FORMAT);
+  return new Date(iso)
+    .toLocaleDateString("en-GB", DATE_FORMAT)
+    .toUpperCase()
+    .replace(",", "");
 }
 
 function formatTime(iso: string): string {
   return `${new Date(iso).toLocaleTimeString("en-GB", TIME_FORMAT)} UTC`;
 }
 
+function stageLabel(match: Match): string {
+  const base = STAGE_LABELS[match.stage] ?? match.stage;
+  return match.group_label ? `${base} · ${match.group_label}` : base;
+}
+
 // status === 'settled' is the only case with a result; 'scheduled' and
 // 'closed' both just mean "no result yet" (closed = kickoff has passed but
 // the sync job hasn't recorded a result yet).
-function statusLabel(match: Match): string {
+function statusInfo(
+  match: Match,
+  bettable: boolean,
+): { label: string; color: "muted" | "gold" } {
   if (match.status === "settled") {
-    if (match.result === "team1") return `${match.team1} won`;
-    if (match.result === "team2") return `${match.team2} won`;
-    return "Draw — bets refunded";
+    if (match.result === "team1") return { label: `${match.team1} won`, color: "muted" };
+    if (match.result === "team2") return { label: `${match.team2} won`, color: "muted" };
+    return { label: "Draw", color: "gold" };
   }
-  if (match.status === "closed") return "Awaiting result";
-  return "Upcoming";
+  if (bettable) return { label: "Upcoming", color: "muted" };
+  return { label: "Awaiting result", color: "muted" };
 }
 
 // Mirrors the payout math in `settle_match` (see
@@ -102,90 +113,6 @@ function computePool(stakes: Pool): {
 
 function formatMultiplier(mult: number | null): string {
   return mult === null ? "—" : `${mult.toFixed(2)}x`;
-}
-
-// Shows the current pool size and the implied payout multiplier for each
-// side, so bettors can see how the parimutuel odds are shaping up.
-function PoolInfo({ match, pool }: { match: Match; pool: Pool }) {
-  const { pot, mult1, mult2 } = computePool(pool);
-
-  return (
-    <p className="text-xs text-zinc-500">
-      Pool: {pot} pts · {match.team1} {formatMultiplier(mult1)} ·{" "}
-      {match.team2} {formatMultiplier(mult2)}
-    </p>
-  );
-}
-
-// The bet-placement form, the user's existing bet on this match, or a
-// "log in to bet" link — whichever applies. Mirrors the bettable window
-// enforced server-side by the `enforce_bet_window` trigger (status =
-// 'scheduled' AND now() < kickoff_at), so the UI doesn't offer bets the DB
-// would reject.
-function BetSection({
-  match,
-  now,
-  loggedIn,
-  balance,
-  bet,
-}: {
-  match: Match;
-  now: number;
-  loggedIn: boolean;
-  balance: number | null;
-  bet: Bet | undefined;
-}) {
-  if (bet) {
-    const pickedTeam = bet.pick === "team1" ? match.team1 : match.team2;
-    let outcomeLabel = "";
-    if (bet.outcome === "won") outcomeLabel = ` — won ${bet.payout} pts`;
-    else if (bet.outcome === "lost") outcomeLabel = " — lost";
-    else if (bet.outcome === "refunded") outcomeLabel = " — refunded";
-
-    return (
-      <p className="text-xs text-zinc-500">
-        Your bet: {bet.stake} pts on {pickedTeam}
-        {outcomeLabel}
-      </p>
-    );
-  }
-
-  const bettable =
-    match.status === "scheduled" &&
-    new Date(match.kickoff_at).getTime() > now;
-
-  if (!bettable) return null;
-
-  if (!loggedIn) {
-    return (
-      <Link href="/login" className="text-xs underline">
-        Log in to bet
-      </Link>
-    );
-  }
-
-  return (
-    <form action={placeBet} className="flex items-center gap-2 text-xs">
-      <input type="hidden" name="matchId" value={match.id} />
-      <select
-        name="pick"
-        className="rounded border border-zinc-300 bg-transparent px-1 py-0.5 dark:border-zinc-700"
-      >
-        <option value="team1">{match.team1}</option>
-        <option value="team2">{match.team2}</option>
-      </select>
-      <input
-        type="number"
-        name="stake"
-        min={1}
-        max={balance ?? undefined}
-        defaultValue={100}
-        required
-        className="w-16 rounded border border-zinc-300 bg-transparent px-1 py-0.5 dark:border-zinc-700"
-      />
-      <BetButton />
-    </form>
-  );
 }
 
 export default async function MatchesPage({
@@ -270,85 +197,91 @@ export default async function MatchesPage({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 p-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Matches</h1>
-        <div className="flex gap-4">
-          <Link href="/leaderboard" className="text-sm underline">
-            Leaderboard
-          </Link>
-          <Link href="/" className="text-sm underline">
-            Home
-          </Link>
+    <div className="min-h-screen pb-[72px]">
+      {/* Sticky header */}
+      <div className="sticky top-0 z-50 border-b border-[var(--line)] bg-[var(--background)]">
+        <div className="mx-auto flex h-14 max-w-[600px] items-center justify-between px-4">
+          <div className="flex items-center gap-2 text-base font-bold">
+            <span>⚽</span>
+            <span>Friendly Bets</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {user && (
+              <div className="rounded-full bg-[var(--green-bg)] px-3 py-[5px] text-[13px] font-semibold text-[var(--green-text)]">
+                {(balance ?? 0).toLocaleString()} pts
+              </div>
+            )}
+            <ThemeToggle />
+          </div>
         </div>
       </div>
 
-      {user && (
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Balance: {balance ?? "—"} points
-        </p>
-      )}
-      {message && <p className="text-sm text-green-600">{message}</p>}
-      {errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
+      {/* Content */}
+      <div className="mx-auto max-w-[600px] px-4 pt-4 pb-2">
+        <IntroCard />
 
-      {(matches ?? []).length === 0 && (
-        <p className="text-zinc-600 dark:text-zinc-400">
-          No matches yet — check back once the schedule has synced.
-        </p>
-      )}
+        {message && (
+          <p className="mb-4 text-sm text-[var(--green-text)]">{message}</p>
+        )}
+        {errorMessage && (
+          <p className="mb-4 text-sm text-[var(--red)]">{errorMessage}</p>
+        )}
 
-      {[...groups.entries()].map(([day, dayMatches]) => (
-        <section key={day}>
-          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">
-            {day}
-          </h2>
-          <ul className="flex flex-col gap-2">
-            {dayMatches.map((match) => (
-              <li
-                key={match.id}
-                className="flex flex-col gap-2 rounded border border-zinc-300 px-4 py-3 dark:border-zinc-700"
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex flex-col gap-1">
-                    <span className="flex items-center gap-2 font-medium">
-                      <Flag team={match.team1} />
-                      {match.team1} vs {match.team2}
-                      <Flag team={match.team2} />
-                    </span>
-                    <span className="text-xs text-zinc-500">
-                      {STAGE_LABELS[match.stage] ?? match.stage}
-                      {match.group_label ? ` · ${match.group_label}` : ""}
-                    </span>
-                  </div>
-                  <div className="flex flex-col items-end gap-1 text-sm">
-                    <span>{formatTime(match.kickoff_at)}</span>
-                    <span
-                      className={
-                        match.status === "settled"
-                          ? "font-medium"
-                          : "text-zinc-500"
-                      }
-                    >
-                      {statusLabel(match)}
-                    </span>
-                  </div>
-                </div>
-                <PoolInfo
-                  match={match}
-                  pool={poolsByMatch.get(match.id) ?? { team1: 0, team2: 0 }}
-                />
-                <BetSection
-                  match={match}
-                  now={now}
+        {(matches ?? []).length === 0 && (
+          <p className="text-sm text-[var(--muted)]">
+            No matches yet — check back once the schedule has synced.
+          </p>
+        )}
+
+        {[...groups.entries()].map(([day, dayMatches]) => (
+          <div key={day}>
+            <div className="px-0.5 pt-1 pb-2.5 text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">
+              {day}
+            </div>
+            {dayMatches.map((match) => {
+              const bettable =
+                match.status === "scheduled" &&
+                new Date(match.kickoff_at).getTime() > now;
+              const { label, color } = statusInfo(match, bettable);
+              const pool = poolsByMatch.get(match.id) ?? { team1: 0, team2: 0 };
+              const { pot, mult1, mult2 } = computePool(pool);
+              const poolInfo = `Pool ${pot} pts · ${match.team1} ${formatMultiplier(mult1)} · ${match.team2} ${formatMultiplier(mult2)}`;
+              const bet = betsByMatch.get(match.id);
+              const existingBet: ExistingBet | undefined = bet
+                ? {
+                    pick: bet.pick as "team1" | "team2",
+                    stake: bet.stake,
+                    outcome: bet.outcome as ExistingBet["outcome"],
+                    payout: bet.payout,
+                  }
+                : undefined;
+
+              return (
+                <MatchCard
+                  key={match.id}
+                  matchId={match.id}
+                  stage={stageLabel(match)}
+                  time={formatTime(match.kickoff_at)}
+                  statusLabel={label}
+                  statusColor={color}
+                  homeName={match.team1}
+                  awayName={match.team2}
+                  homeIsWinner={match.status === "settled" && match.result === "team1"}
+                  awayIsWinner={match.status === "settled" && match.result === "team2"}
+                  poolInfo={poolInfo}
+                  multipliers={{ team1: mult1, team2: mult2 }}
+                  bettable={bettable}
                   loggedIn={!!user}
                   balance={balance}
-                  bet={betsByMatch.get(match.id)}
+                  existingBet={existingBet}
                 />
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
+              );
+            })}
+          </div>
+        ))}
+      </div>
+
+      <BottomNav />
     </div>
   );
 }
