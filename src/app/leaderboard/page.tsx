@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { BottomNav } from "@/components/bottom-nav";
+import { LeaderboardTable, type LeaderboardRow } from "@/components/leaderboard-table";
 
 type PointsEntry = {
   id: string;
@@ -10,7 +11,6 @@ type PointsEntry = {
 
 type AccuracyEntry = {
   user_id: string;
-  display_name: string | null;
   bets_placed: number;
   correct: number;
   wrong: number;
@@ -142,11 +142,10 @@ export default async function LeaderboardPage() {
       .from("profiles")
       .select("id, display_name, points_balance")
       .order("points_balance", { ascending: false }),
+    // No ordering needed — the table below sorts client-side.
     supabase
       .from("accuracy")
-      .select("user_id, display_name, bets_placed, correct, wrong, win_rate_pct, streak")
-      .order("win_rate_pct", { ascending: false })
-      .order("bets_placed", { ascending: false }),
+      .select("user_id, bets_placed, correct, wrong, win_rate_pct, streak"),
   ]);
 
   if (pointsError || accuracyError) {
@@ -161,10 +160,28 @@ export default async function LeaderboardPage() {
   const pointsRows = (points ?? []) as PointsEntry[];
   const accuracyRows = (accuracy ?? []) as AccuracyEntry[];
 
-  // Podium-style top 3, then a plain ranked list for the rest. If there
-  // aren't at least 3 players, skip the podium — it assumes 3 columns.
+  // Join points with accuracy so every player has a full row of stats —
+  // players with no settled bets yet just get zeros (they won't be in the
+  // accuracy view, since it derives from `bets`).
+  const accuracyByUserId = new Map(accuracyRows.map((a) => [a.user_id, a]));
+  const rows: LeaderboardRow[] = pointsRows.map((p) => {
+    const acc = accuracyByUserId.get(p.id);
+    return {
+      id: p.id,
+      display_name: p.display_name,
+      points_balance: p.points_balance,
+      bets_placed: acc?.bets_placed ?? 0,
+      correct: acc?.correct ?? 0,
+      wrong: acc?.wrong ?? 0,
+      win_rate_pct: acc?.win_rate_pct ?? 0,
+      streak: acc?.streak ?? 0,
+    };
+  });
+
+  // Podium-style top 3 by points — a permanent showcase, separate from the
+  // sortable table below. If there aren't at least 3 players, skip it — it
+  // assumes 3 columns.
   const podium = pointsRows.length >= 3 ? pointsRows.slice(0, 3) : [];
-  const rest = pointsRows.slice(podium.length);
 
   return (
     <div className="min-h-screen pb-[72px]">
@@ -199,84 +216,17 @@ export default async function LeaderboardPage() {
           </div>
         )}
 
-        {/* Ranked list 4+ */}
-        {rest.length > 0 && (
-          <ol className="mb-7 overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)]">
-            {rest.map((entry, i) => (
-              <li
-                key={entry.id}
-                className={`flex items-center gap-3 px-4 py-3.5 ${
-                  i < rest.length - 1 ? "border-b border-[var(--line)]" : ""
-                }`}
-              >
-                <span className="w-6 shrink-0 text-right text-[13px] font-semibold text-[var(--muted)]">
-                  {podium.length + i + 1}.
-                </span>
-                <span className="flex-1 truncate text-sm font-medium">
-                  {entry.display_name ?? "Unknown"}
-                </span>
-                <span className="shrink-0 text-[13px] font-semibold text-[var(--muted)]">
-                  {entry.points_balance.toLocaleString()} pts
-                </span>
-              </li>
-            ))}
-          </ol>
-        )}
-
-        {/* Accuracy */}
-        <div className="mb-3 text-[11px] font-bold tracking-[0.08em] text-[var(--muted)] uppercase">
-          Accuracy
-        </div>
-        {accuracyRows.length === 0 ? (
-          <p className="text-sm text-[var(--muted)]">
-            No settled bets yet — check back once results come in.
-          </p>
-        ) : (
-          <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)]">
-            <div className="flex items-center gap-2 border-b border-[var(--line)] bg-[var(--surface-2)] px-4 py-2.5">
-              <div className="w-5" />
-              <div className="flex-1 text-[11px] font-semibold text-[var(--muted)]">Player</div>
-              <div className="w-11 text-center text-[11px] font-semibold text-[var(--muted)]">W–L</div>
-              <div className="w-11 text-center text-[11px] font-semibold text-[var(--muted)]">Win%</div>
-              <div className="w-[52px] text-right text-[11px] font-semibold text-[var(--muted)]">Streak</div>
+        {/* All players: one sortable table covering points + accuracy */}
+        {pointsRows.length > 0 && (
+          <>
+            <div className="mb-1 text-[11px] font-bold tracking-[0.08em] text-[var(--muted)] uppercase">
+              All players
             </div>
-            {accuracyRows.map((entry, i) => {
-              const winPctColor =
-                entry.correct > entry.wrong
-                  ? "var(--green-text)"
-                  : entry.wrong > entry.correct
-                    ? "var(--red)"
-                    : "var(--muted)";
-
-              return (
-                <div
-                  key={entry.user_id}
-                  className={`flex items-center gap-2 px-4 py-3.5 ${
-                    i < accuracyRows.length - 1 ? "border-b border-[var(--line)]" : ""
-                  }`}
-                >
-                  <div className="w-5 shrink-0 text-right text-xs font-semibold text-[var(--muted)]">
-                    {i + 1}
-                  </div>
-                  <div className="flex-1 truncate text-sm font-medium">
-                    {entry.display_name ?? "Unknown"}
-                  </div>
-                  <div className="w-11 shrink-0 text-center text-[13px] text-[var(--muted)]">
-                    {entry.correct}–{entry.wrong}
-                  </div>
-                  <div
-                    className="w-11 shrink-0 text-center text-[13px] font-semibold"
-                    style={{ color: winPctColor }}
-                  >
-                    {entry.win_rate_pct}%
-                  </div>
-                  <div className="w-[52px] shrink-0 text-right text-[13px] text-[var(--muted)]">
-                    {entry.streak > 0 ? `🔥 ${entry.streak}` : "—"}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+            <p className="mb-3 text-xs text-[var(--muted)]">
+              Tap a column header to sort.
+            </p>
+            <LeaderboardTable rows={rows} />
+          </>
         )}
       </div>
 
