@@ -141,12 +141,7 @@ function groupByDay(matches: Match[]): DayGroup[] {
   return groups;
 }
 
-export default async function MatchesPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ message?: string; error?: string }>;
-}) {
-  const { message, error: errorMessage } = await searchParams;
+export default async function MatchesPage() {
   // This is a Server Component — Date.now() here is the request time, which
   // is exactly what we want for "is betting still open?". The react-hooks
   // purity rule is aimed at client components re-rendering with stale
@@ -335,13 +330,6 @@ export default async function MatchesPage({
       {/* Content */}
       <div className="mx-auto max-w-[600px] px-4 pt-4 pb-2">
         <IntroCard />
-
-        {message && (
-          <p className="mb-4 text-sm text-[var(--green-text)]">{message}</p>
-        )}
-        {errorMessage && (
-          <p className="mb-4 text-sm text-[var(--red)]">{errorMessage}</p>
-        )}
 
         {(matches ?? []).length === 0 ? (
           <p className="text-sm text-[var(--muted)]">

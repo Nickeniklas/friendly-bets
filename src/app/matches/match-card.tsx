@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Flag } from "@/components/flag";
-import { placeBet } from "./actions";
-import { PlaceBetButton } from "./place-bet-button";
+import { placeBet, type PlaceBetResult } from "./actions";
 
 const AMOUNT_OPTIONS = [50, 100, 200, 500];
 
@@ -55,8 +55,38 @@ export function MatchCard({
   const [nudge, setNudge] = useState(false);
   const homeRef = useRef<HTMLButtonElement>(null);
   const awayRef = useRef<HTMLButtonElement>(null);
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  const [betResult, setBetResult] = useState<PlaceBetResult | null>(null);
 
   const canPick = bettable && loggedIn && !existingBet;
+
+  // Placing a bet returns a status instead of redirecting (see actions.ts),
+  // so the result shows as a toast and the page stays put — refreshing just
+  // re-fetches this match's pool/balance/existingBet without navigating, so
+  // the user's scroll position is untouched.
+  async function handlePlaceBet() {
+    if (selected === null || pending) return;
+    setPending(true);
+    const formData = new FormData();
+    formData.set("matchId", matchId);
+    formData.set("pick", selected);
+    formData.set("stake", String(amount));
+    const result = await placeBet(formData);
+    setPending(false);
+    setBetResult(result);
+    if (result.status === "success") {
+      setSelected(null);
+      router.refresh();
+    }
+  }
+
+  // Auto-dismiss the toast a few seconds after it appears.
+  useEffect(() => {
+    if (!betResult) return;
+    const timer = setTimeout(() => setBetResult(null), 3000);
+    return () => clearTimeout(timer);
+  }, [betResult]);
 
   function toggleSelect(pick: Pick) {
     if (!canPick) return;
@@ -218,16 +248,19 @@ export function MatchCard({
             <button
               type="button"
               onClick={() => setSelected(null)}
-              className="flex-1 cursor-pointer rounded-[10px] border-[1.5px] border-[var(--line)] bg-transparent p-[13px] text-sm font-medium text-[var(--muted)]"
+              disabled={pending}
+              className="flex-1 cursor-pointer rounded-[10px] border-[1.5px] border-[var(--line)] bg-transparent p-[13px] text-sm font-medium text-[var(--muted)] disabled:opacity-50"
             >
               Cancel
             </button>
-            <form action={placeBet} className="flex-[2]">
-              <input type="hidden" name="matchId" value={matchId} />
-              <input type="hidden" name="pick" value={selected ?? ""} />
-              <input type="hidden" name="stake" value={amount} />
-              <PlaceBetButton />
-            </form>
+            <button
+              type="button"
+              onClick={handlePlaceBet}
+              disabled={pending}
+              className="flex-[2] cursor-pointer rounded-[10px] border-none bg-[var(--green)] p-[13px] text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {pending ? "Placing..." : "Place bet →"}
+            </button>
           </div>
         </div>
       )}
@@ -247,6 +280,24 @@ export function MatchCard({
       {/* Result */}
       {hasResult && existingBet && (
         <ResultRow existingBet={existingBet} betTeamName={betTeamName} />
+      )}
+
+      {/* Bet-placement toast — fixed above the bottom nav, self-dismissing.
+          Confirms the bet went through (or explains why not) without
+          navigating away, so the page stays right where it was. */}
+      {betResult && (
+        <div
+          className="pointer-events-none fixed inset-x-0 bottom-[76px] z-50 flex justify-center px-4"
+          aria-live="polite"
+        >
+          <div
+            className="rounded-full px-4 py-2 text-sm font-semibold text-white shadow-lg"
+            style={{ background: betResult.status === "success" ? "var(--green)" : "var(--red)" }}
+          >
+            {betResult.status === "success" ? "✓ " : ""}
+            {betResult.message}
+          </div>
+        </div>
       )}
     </div>
   );
