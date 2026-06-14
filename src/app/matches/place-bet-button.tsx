@@ -2,7 +2,8 @@
 
 import { useFormStatus } from "react-dom";
 
-/** Submit button for the bet panel's "Place bet" form (see bet-button.tsx for why this needs a pending state). */
+/** Submit button for the bet panel's "Place bet" form — see CLAUDE.md Gotchas
+ * ("Convention: any <form action=...>...") for why this needs a pending state. */
 export function PlaceBetButton() {
   const { pending } = useFormStatus();
 

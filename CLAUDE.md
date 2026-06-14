@@ -31,9 +31,22 @@ Post-v1 polish:
   (`src/app/actions.ts`), and `DailyBonusToast` (`src/components/daily-bonus-toast.tsx`).
   Home page also shows the current streak. Verified live by the owner — see
   `docs/HISTORY.md`.
+- `/matches` got a mobile-first visual redesign (commit `02cd971`, merged to
+  `main` 2026-06-13), implemented from a Claude Design mockup
+  (`Matches.dc.html`): sticky header with balance pill + dark/light toggle, a
+  dismissible "How to play" card (`intro-card.tsx`), tap-a-team-to-bet flow
+  (`match-card.tsx` — bet panel with 50/100/200/500pt quick-pick chips and a
+  live potential-win estimate), read-only confirmed-bet/result rows, and a
+  fixed bottom Matches/Leaderboard tab bar (`bottom-nav.tsx`). The dark/light
+  toggle (default dark) is app-wide — see "Theme" below — so it affects every
+  page's `dark:` styling, but only `/matches` has the new layout/visuals so
+  far. The mockup's "Edit bet" control was deliberately NOT implemented (per
+  owner instruction) — placed bets remain read-only, same as before.
 
-No known open bugs. Anything further is a v2 idea (see `docs/PLAN.md` "v2 ideas") —
-not part of the original plan, don't start on these without being asked.
+No known open bugs. Next planned UI task: implement `Leaderboard.dc.html`
+(same design bundle) for `/leaderboard` — not started. Anything else further
+is a v2 idea (see `docs/PLAN.md` "v2 ideas") — not part of the original plan,
+don't start on these without being asked.
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.
@@ -76,6 +89,32 @@ Brevo directly; only Supabase's auth server does.
 Since this sender has no domain reputation yet, first-time recipients often
 find the magic-link email in spam/trash. `/login` now tells users this
 directly (see Gotchas) — no need to repeat it when sharing the link.
+
+## Theme: dark/light toggle (DONE — reference only)
+The whole app's dark mode is now a manual, app-wide toggle (default dark)
+instead of following OS preference:
+
+- `src/app/globals.css` defines color tokens (`--background`, `--foreground`,
+  `--surface`, `--surface-2`, `--line`, `--muted`, `--green*`, `--gold`,
+  `--red`, all OKLCH) in `:root` (light) and `.dark` (dark), plus
+  `@custom-variant dark (&:where(.dark, .dark *));` — this repoints every
+  `dark:` Tailwind utility (across `/`, `/login`, `/leaderboard`, `/matches`)
+  at a `.dark` class on `<html>` instead of `prefers-color-scheme`.
+- `src/components/theme-provider.tsx` exports `ThemeProvider`/`useTheme`
+  (tracks the toggle via `useSyncExternalStore` on
+  `document.documentElement.classList`, persists to
+  `localStorage['fb-dark']`; default is dark — anything other than the
+  literal string `'false'`) and `themeScript`, a string of inline JS.
+- `src/app/layout.tsx` injects `themeScript` into `<head>` so the `.dark`
+  class is applied *before* React hydrates (no flash of the wrong theme),
+  and wraps the app in `ThemeProvider`. Because that script mutates
+  `<html>`'s class before hydration, `<html>` has `suppressHydrationWarning`
+  — see Gotchas.
+- `src/components/theme-toggle.tsx` (`ThemeToggle`, ☀/🌙 button) is currently
+  only rendered in `/matches`' header; other pages have no toggle control yet
+  but still follow whatever `.dark` state is set.
+- Font is now `next/font/google`'s `Space Grotesk` (`--font-space-grotesk` in
+  `src/app/layout.tsx` / `globals.css`), replacing the default Geist fonts.
 
 ## What we're building
 A non-commercial World Cup 2026 prediction game for family & friends. No real money.
@@ -179,7 +218,7 @@ step-by-step build log:
   submit button as a small `"use client"` component using
   `useFormStatus().pending` to show a "Verb-ing..." label and disable the
   button. See `src/app/login/submit-button.tsx` and
-  `src/app/matches/bet-button.tsx` for the pattern. Without this, slow
+  `src/app/matches/place-bet-button.tsx` for the pattern. Without this, slow
   round-trips look unresponsive and invite double-submits, which surface as
   confusing errors (stale magic-link, duplicate-bet constraint, etc.).
 - Magic-link emails sent via Brevo (see "Email / SMTP" above) may land in
@@ -192,6 +231,14 @@ step-by-step build log:
   so `DailyBonusToast` (`src/components/daily-bonus-toast.tsx`) can safely
   call it on every mount without separate "first request of the day"
   tracking — already-claimed-today calls just return 0 and render nothing.
+- If a client-side script mutates an attribute React also controls on an
+  element before/during hydration (e.g. `themeScript` toggling the `.dark`
+  class on `<html>` — see "Theme" above), React throws a hydration-mismatch
+  error comparing the server-rendered attribute to the client's. Fixed by
+  adding `suppressHydrationWarning` to that element (`<html>` in
+  `src/app/layout.tsx`) — the standard next-themes-style fix. Apply the same
+  fix to any future element whose attributes get patched by a pre-hydration
+  inline script.
 
 ## Secrets
 Supabase URL, anon key, service-role key, SYNC_SECRET, and NEXT_PUBLIC_SITE_URL live

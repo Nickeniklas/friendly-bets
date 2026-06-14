@@ -18,6 +18,17 @@ Post-v1: a daily login bonus with streak multiplier is also live —
 UTC day (streak-based, capped at day 7), shown via a toast and the home
 page's streak display.
 
+Also post-v1: `/matches` got a mobile-first redesign (2026-06-13, commit
+`02cd971`) built from a Claude Design mockup (`Matches.dc.html`) — sticky
+header, dismissible "How to play" card, tap-a-team-to-bet flow with
+50/100/200/500pt quick-pick chips, read-only confirmed-bet/result rows, and a
+bottom Matches/Leaderboard tab bar. This also introduced an app-wide manual
+dark/light toggle (default dark, `.dark` class + `fb-dark` in localStorage)
+that affects every page's `dark:` styling. The mockup's "Edit bet" control
+was deliberately not implemented — bets remain read-only once placed. Next
+planned UI task: the matching `Leaderboard.dc.html` redesign for
+`/leaderboard` — not started.
+
 ## Project
 A fun, non-commercial prediction/betting site for family & friends, for the 2026 FIFA
 World Cup. No real money, ever. v1 scope: view matches, bet winner/loser, live-ish

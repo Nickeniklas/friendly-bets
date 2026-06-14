@@ -114,6 +114,13 @@ and fixed) is in `docs/HISTORY.md`.
   day awards 100-400 points based on a login streak (capped at 7 days), via
   `claim_daily_bonus()` RPC + a toast on every page. See `docs/HISTORY.md` and
   README ("Daily login bonus").
+- `/matches` mobile-first redesign + app-wide dark/light toggle (2026-06-13,
+  commit `02cd971`) — implemented from a Claude Design mockup
+  (`Matches.dc.html`): sticky header, "How to play" card, tap-to-bet flow with
+  quick-pick stake chips, bottom tab bar, and a manual dark/light theme
+  applied across the whole app. See `docs/HISTORY.md`, `CLAUDE.md` ("Theme:
+  dark/light toggle"), and README ("Place a bet", "Theme"). The matching
+  `Leaderboard.dc.html` redesign for `/leaderboard` is next — not started.
 
 ## Open items
 - Exact "thin pool" trigger is decided: top up to **300**. (Settled.)

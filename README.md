@@ -41,8 +41,14 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
 - Daily login bonus with streak multiplier: the first time you load the app
   each day, you get a points bonus that scales with your login streak (see
   "Daily login bonus" below).
+- `/matches` has a mobile-first redesign: sticky header with balance + a
+  dark/light toggle, a dismissible "How to play" card, tap-a-team betting
+  with quick-pick stake chips, and a bottom Matches/Leaderboard tab bar (see
+  "Place a bet" and "Theme" below). The dark/light toggle is app-wide.
+  `/leaderboard` hasn't been redesigned yet.
 
-No known open bugs. Anything further is a v2 idea — see `docs/PLAN.md`.
+No known open bugs. Next up is a matching redesign for `/leaderboard` — not
+started. Anything else further is a v2 idea — see `docs/PLAN.md`.
 
 ## Getting started
 
@@ -104,14 +110,18 @@ login is required to view it.
 
 ### Place a bet
 
-On `/matches`, any match that's still `scheduled` and hasn't kicked off yet
-shows a pick (team1/team2) + stake form for logged-in users. Submitting it
-inserts a row into `bets`; the DB triggers from
-`supabase/migrations/20260609000000_initial_schema.sql` (plus the
+On `/matches`, tap either team in a match that's still `scheduled` and hasn't
+kicked off yet to select your pick — a bet panel slides open below the match
+card with quick-pick stake chips (50 / 100 / 200 / 500 pts, disabled above
+your current balance) and a live "potential win" estimate based on the
+current pool/multiplier. Tap "Place bet →" to submit, or "Cancel" to close the
+panel without betting. Submitting inserts a row into `bets`; the DB triggers
+from `supabase/migrations/20260609000000_initial_schema.sql` (plus the
 `SECURITY DEFINER` fix in `20260611000000_...`) enforce the bet window,
 deduct the stake from `points_balance`, and block a second bet on the same
-match. Once you've bet on a match it shows "Your bet: ..." instead of the
-form, including the outcome/payout after `settle_match` runs.
+match. Once you've bet on a match, the card shows a read-only "Bet placed —
+N pts on Team" row instead of the panel (no editing), and the outcome
+(won/lost/refunded, with payout) once `settle_match` runs.
 
 ### Leaderboard
 
@@ -152,3 +162,13 @@ safe to call on every page load. It's triggered client-side:
 shows a self-dismissing "🔥 Day N streak — +N points!" banner if a bonus was
 awarded. The home page (`/`) also shows the current streak next to the points
 balance.
+
+### Theme (dark/light mode)
+
+The whole app has a manual dark/light toggle, defaulting to dark and
+persisted in `localStorage` (`fb-dark`) as a `.dark` class on `<html>` — all
+`dark:` Tailwind styles across the app follow this toggle rather than your
+OS theme. The ☀/🌙 toggle button currently lives in `/matches`' header
+(`src/components/theme-toggle.tsx`); other pages don't have the button yet
+but still render in whichever mode is active. See `CLAUDE.md` ("Theme:
+dark/light toggle") for the implementation.
