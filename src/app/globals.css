@@ -18,6 +18,17 @@
   --green-text: oklch(0.38 0.15 142);
   --gold: oklch(0.72 0.15 85);
   --red: oklch(0.62 0.2 25);
+
+  /* Leaderboard podium (1st/2nd/3rd place styling) */
+  --gold-bg: oklch(0.96 0.05 85);
+  --gold-text: oklch(0.42 0.14 85);
+  --gold-base-bg: oklch(0.93 0.04 85);
+  --silver-bg: oklch(0.92 0.02 250);
+  --silver-text: oklch(0.4 0.03 250);
+  --silver-border: oklch(0.72 0.02 250);
+  --bronze-bg: oklch(0.94 0.05 55);
+  --bronze-text: oklch(0.42 0.1 55);
+  --bronze-border: oklch(0.7 0.1 55);
 }
 
 .dark {
@@ -30,6 +41,16 @@
   --green-bg: oklch(0.17 0.05 142);
   --green-dim: oklch(0.3 0.1 142);
   --green-text: oklch(0.68 0.19 142);
+
+  --gold-bg: oklch(0.2 0.06 85);
+  --gold-text: oklch(0.8 0.15 85);
+  --gold-base-bg: oklch(0.17 0.04 85);
+  --silver-bg: oklch(0.22 0.02 250);
+  --silver-text: oklch(0.78 0.03 250);
+  --silver-border: oklch(0.45 0.02 250);
+  --bronze-bg: oklch(0.2 0.05 55);
+  --bronze-text: oklch(0.7 0.1 55);
+  --bronze-border: oklch(0.5 0.1 55);
 }
 
 @theme inline {
