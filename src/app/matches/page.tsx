@@ -287,9 +287,25 @@ export default async function MatchesPage({
     return groups.map(({ day, matches: dayMatches }) => (
       <div key={day}>
         {/* Sticky date header — top offset (104px) clears the sticky page
-            header (56px) and the sticky tab bar (48px) above it. */}
-        <div className="sticky top-[104px] z-30 bg-[var(--background)] px-0.5 pt-3 pb-2.5 text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">
-          {day}
+            header (56px) and the sticky tab bar (48px) above it. The
+            "washi tape" strip (clipped corners, bleeding slightly past the
+            cards) sits inside a full-width sticky wrapper so it covers the
+            cards scrolling underneath without them showing through the
+            clipped corners. */}
+        <div className="sticky top-[104px] z-30 bg-[var(--background)] pt-3 pb-2.5">
+          <div
+            className="-mx-1 flex items-center justify-between px-4 py-2 text-[11px] font-bold uppercase tracking-wider shadow-sm"
+            style={{
+              background: "var(--green-bg)",
+              color: "var(--green-text)",
+              clipPath: "polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)",
+            }}
+          >
+            <span>{day}</span>
+            <span className="text-[10px] font-semibold normal-case tracking-normal opacity-70">
+              {dayMatches.length} {dayMatches.length === 1 ? "match" : "matches"}
+            </span>
+          </div>
         </div>
         {dayMatches.map(renderMatchCard)}
       </div>
