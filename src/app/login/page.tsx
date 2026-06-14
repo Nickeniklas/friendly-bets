@@ -1,5 +1,6 @@
 import { signInWithMagicLink } from "./actions";
 import { SubmitButton } from "./submit-button";
+import { ThemeTogglePill } from "./theme-toggle-pill";
 
 export default async function LoginPage({
   searchParams,
@@ -9,36 +10,76 @@ export default async function LoginPage({
   const { message, error } = await searchParams;
 
   return (
-    <div className="flex flex-1 items-center justify-center p-8">
-      <form
-        action={signInWithMagicLink}
-        className="flex w-full max-w-sm flex-col gap-4"
-      >
-        <h1 className="text-2xl font-semibold">Log in</h1>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Enter your email and we&apos;ll send you a magic link to sign in.
-          No password needed.
+    <div className="flex flex-1 flex-col items-center justify-center px-5 py-8">
+      <div className="mb-9 text-center">
+        <div className="mb-[14px] text-[48px] leading-none">⚽</div>
+        <div className="text-[26px] font-bold tracking-[-0.6px]">Friendly Bets</div>
+        <div className="mt-1.5 text-[12px] font-semibold tracking-[0.1em] text-[var(--green)] uppercase">
+          World Cup 2026
+        </div>
+      </div>
+
+      <div className="w-full max-w-[420px] rounded-[20px] border border-[var(--line)] bg-[var(--surface)] px-6 py-7">
+        <h2 className="mb-1.5 text-[19px] font-bold tracking-[-0.3px]">Sign in</h2>
+        <p className="mb-6 text-sm leading-[1.55] text-[var(--muted)]">
+          Enter your email — we&apos;ll send a magic sign-in link. No password needed.
         </p>
 
-        <input
-          type="email"
-          name="email"
-          required
-          placeholder="you@example.com"
-          className="rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700 dark:bg-black"
-        />
+        <form action={signInWithMagicLink} className="flex flex-col gap-2.5">
+          <input
+            type="email"
+            name="email"
+            required
+            placeholder="your@email.com"
+            className="block w-full rounded-xl border-[1.5px] border-[var(--line)] bg-[var(--input-bg)] px-4 py-[15px] text-base text-[var(--foreground)] outline-none"
+          />
 
-        <SubmitButton />
+          <SubmitButton />
+        </form>
 
-        {message && <p className="text-sm text-green-600">{message}</p>}
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {message && (
+          <p className="mt-3 text-sm text-[var(--green-text)]">{message}</p>
+        )}
+        {error && <p className="mt-3 text-sm text-[var(--red)]">{error}</p>}
 
-        <p className="text-xs text-zinc-500 dark:text-zinc-500">
-          Tip: the login email sometimes lands in spam or trash, especially
-          the first time. If you don&apos;t see it in your inbox within a
-          minute, check there.
-        </p>
-      </form>
+        <div className="mt-5 rounded-xl border-[1.5px] border-[var(--warn-border)] bg-[var(--warn-bg)] p-4">
+          <div className="mb-3 text-[11px] font-bold tracking-[0.07em] text-[var(--gold)] uppercase">
+            Heads up
+          </div>
+          <div className="flex flex-col gap-[11px]">
+            <div className="flex items-start gap-3">
+              <span className="shrink-0 text-[18px] leading-[1.3]">📩</span>
+              <span className="text-[13px] leading-[1.5] text-[var(--muted)]">
+                <strong className="font-semibold text-[var(--foreground)]">
+                  Check spam / junk
+                </strong>{" "}
+                — the link often lands there
+              </span>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="shrink-0 text-[18px] leading-[1.3]">⏱</span>
+              <span className="text-[13px] leading-[1.5] text-[var(--muted)]">
+                The link expires in{" "}
+                <strong className="font-semibold text-[var(--foreground)]">
+                  1 minute
+                </strong>{" "}
+                — click it quickly
+              </span>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="shrink-0 text-[18px] leading-[1.3]">☝️</span>
+              <span className="text-[13px] leading-[1.5] text-[var(--muted)]">
+                <strong className="font-semibold text-[var(--foreground)]">
+                  Press once only
+                </strong>{" "}
+                — sending it twice won&apos;t help
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <ThemeTogglePill />
     </div>
   );
 }

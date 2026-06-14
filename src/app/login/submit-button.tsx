@@ -19,9 +19,9 @@ export function SubmitButton() {
     <button
       type="submit"
       disabled={pending}
-      className="rounded bg-foreground px-4 py-2 text-background disabled:opacity-50"
+      className="w-full rounded-xl bg-[var(--green)] px-4 py-4 text-base font-semibold tracking-[-0.2px] text-white disabled:opacity-50"
     >
-      {pending ? "Sending..." : "Send magic link"}
+      {pending ? "Sending..." : "Send magic link →"}
     </button>
   );
 }

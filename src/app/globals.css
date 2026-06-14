@@ -29,6 +29,11 @@
   --bronze-bg: oklch(0.94 0.05 55);
   --bronze-text: oklch(0.42 0.1 55);
   --bronze-border: oklch(0.7 0.1 55);
+
+  /* Login page */
+  --input-bg: oklch(0.97 0.005 80);
+  --warn-bg: oklch(0.97 0.025 85);
+  --warn-border: oklch(0.84 0.07 85);
 }
 
 .dark {
@@ -51,6 +56,10 @@
   --bronze-bg: oklch(0.2 0.05 55);
   --bronze-text: oklch(0.7 0.1 55);
   --bronze-border: oklch(0.5 0.1 55);
+
+  --input-bg: oklch(0.13 0.012 250);
+  --warn-bg: oklch(0.155 0.04 85);
+  --warn-border: oklch(0.30 0.09 85);
 }
 
 @theme inline {
