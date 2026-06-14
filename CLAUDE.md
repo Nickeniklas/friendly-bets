@@ -5,7 +5,7 @@ For a step-by-step account of how v1 was built (including bugs found and fixed a
 way), see `docs/HISTORY.md` — that detail has been moved out of this file to keep this
 brief current and short.
 
-## Status (as of 2026-06-13)
+## Status (as of 2026-06-14)
 **v1 is complete and live** at `https://friendly-bets-rust.vercel.app`. All of
 `docs/PLAN.md`'s build order (steps 1-8) is DONE:
 
@@ -38,15 +38,34 @@ Post-v1 polish:
   (`match-card.tsx` — bet panel with 50/100/200/500pt quick-pick chips and a
   live potential-win estimate), read-only confirmed-bet/result rows, and a
   fixed bottom Matches/Leaderboard tab bar (`bottom-nav.tsx`). The dark/light
-  toggle (default dark) is app-wide — see "Theme" below — so it affects every
-  page's `dark:` styling, but only `/matches` has the new layout/visuals so
-  far. The mockup's "Edit bet" control was deliberately NOT implemented (per
-  owner instruction) — placed bets remain read-only, same as before.
+  toggle (default dark) is app-wide — see "Theme" below.
+- `/leaderboard` got the matching redesign (commit `4ad4e9a`, 2026-06-14),
+  implemented from the same Claude Design bundle's `Leaderboard.dc.html`:
+  same sticky header (brand + `ThemeToggle`, no balance pill) and bottom nav
+  as `/matches`, a podium for the top 3 players (gold/silver/bronze circular
+  avatars with initials over medal-colored bases — `PODIUM_CONFIG` in
+  `src/app/leaderboard/page.tsx`), a rounded ranked list for 4th place
+  onward, and an accuracy table (W-L, color-coded Win%, 🔥 streak). Falls
+  back to a plain ranked list (no podium) if there are fewer than 3 players.
+  New podium color tokens added to `globals.css`: `--gold-bg`, `--gold-text`,
+  `--gold-base-bg`, `--silver-*`, `--bronze-*` (light + dark).
+- `/login` got the matching redesign (commit `117e670`, 2026-06-14),
+  implemented from the same bundle's `Login.dc.html`: centered ⚽ Friendly
+  Bets / World Cup 2026 logo, a "Sign in" card (email input + green "Send
+  magic link →" button, reusing the existing `signInWithMagicLink` action and
+  `SubmitButton` pending-state pattern), the existing spam/timing/
+  double-submit warnings restyled as a "Heads up" card, and a labeled
+  dark/light toggle pill below the card (`src/app/login/theme-toggle-pill.tsx`,
+  `ThemeTogglePill` — same `useTheme` hook as `ThemeToggle`, styled per the
+  design since `/login` has no header). New tokens added to `globals.css`:
+  `--input-bg`, `--warn-bg`, `--warn-border` (light + dark).
 
-No known open bugs. Next planned UI task: implement `Leaderboard.dc.html`
-(same design bundle) for `/leaderboard` — not started. Anything else further
-is a v2 idea (see `docs/PLAN.md` "v2 ideas") — not part of the original plan,
-don't start on these without being asked.
+All three pages from the Claude Design bundle (`Matches.dc.html`,
+`Leaderboard.dc.html`, `Login.dc.html`) are now implemented and visually
+consistent (shared header/bottom-nav/theme system where applicable). No known
+open bugs and no further UI redesign work is planned — anything else is a v2
+idea (see `docs/PLAN.md` "v2 ideas"), not part of the original plan, don't
+start on these without being asked.
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.
@@ -110,9 +129,13 @@ instead of following OS preference:
   and wraps the app in `ThemeProvider`. Because that script mutates
   `<html>`'s class before hydration, `<html>` has `suppressHydrationWarning`
   — see Gotchas.
-- `src/components/theme-toggle.tsx` (`ThemeToggle`, ☀/🌙 button) is currently
-  only rendered in `/matches`' header; other pages have no toggle control yet
-  but still follow whatever `.dark` state is set.
+- `src/components/theme-toggle.tsx` (`ThemeToggle`, ☀/🌙 button) is rendered
+  in both `/matches`' and `/leaderboard`'s sticky headers. `/login` has no
+  header, so it instead gets its own labeled pill toggle
+  (`src/app/login/theme-toggle-pill.tsx`, `ThemeTogglePill`) below the
+  sign-in card — same `useTheme` hook, styled per `Login.dc.html`. The home
+  page (`/`) has no toggle control yet but still follows whatever `.dark`
+  state is set.
 - Font is now `next/font/google`'s `Space Grotesk` (`--font-space-grotesk` in
   `src/app/layout.tsx` / `globals.css`), replacing the default Geist fonts.
 

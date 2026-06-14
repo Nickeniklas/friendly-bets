@@ -119,8 +119,18 @@ and fixed) is in `docs/HISTORY.md`.
   (`Matches.dc.html`): sticky header, "How to play" card, tap-to-bet flow with
   quick-pick stake chips, bottom tab bar, and a manual dark/light theme
   applied across the whole app. See `docs/HISTORY.md`, `CLAUDE.md` ("Theme:
-  dark/light toggle"), and README ("Place a bet", "Theme"). The matching
-  `Leaderboard.dc.html` redesign for `/leaderboard` is next — not started.
+  dark/light toggle"), and README ("Place a bet", "Theme").
+- `/leaderboard` redesign (2026-06-14, commit `4ad4e9a`) — implemented from
+  the same bundle's `Leaderboard.dc.html`: gold/silver/bronze podium for the
+  top 3, ranked list for the rest, accuracy table. See `docs/HISTORY.md` and
+  README ("Leaderboard").
+- `/login` redesign (2026-06-14, commit `117e670`) — implemented from the
+  same bundle's `Login.dc.html`: centered logo, "Sign in" card with magic-link
+  button, "Heads up" warnings card, labeled theme-toggle pill. See
+  `docs/HISTORY.md` and README ("Theme").
+
+All three pages from the Claude Design bundle are now implemented — no
+further UI redesign work planned.
 
 ## Open items
 - Exact "thin pool" trigger is decided: top up to **300**. (Settled.)

@@ -45,10 +45,18 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
   dark/light toggle, a dismissible "How to play" card, tap-a-team betting
   with quick-pick stake chips, and a bottom Matches/Leaderboard tab bar (see
   "Place a bet" and "Theme" below). The dark/light toggle is app-wide.
-  `/leaderboard` hasn't been redesigned yet.
+- `/leaderboard` has the matching redesign: same sticky header + bottom nav,
+  a podium for the top 3 players (gold/silver/bronze avatars and bases), a
+  ranked list for 4th place onward, and the accuracy table (see
+  "Leaderboard" below).
+- `/login` has the matching redesign: centered logo, a "Sign in" card with
+  email input + magic-link button, the spam/timing/double-submit warnings as
+  a "Heads up" card, and a labeled dark/light toggle pill (see "Theme"
+  below).
 
-No known open bugs. Next up is a matching redesign for `/leaderboard` — not
-started. Anything else further is a v2 idea — see `docs/PLAN.md`.
+No known open bugs. All three Claude Design pages (Matches, Leaderboard,
+Login) are implemented. Anything else further is a v2 idea — see
+`docs/PLAN.md`.
 
 ## Getting started
 
@@ -126,10 +134,12 @@ N pts on Team" row instead of the panel (no editing), and the outcome
 ### Leaderboard
 
 `/leaderboard` is a read-only Server Component (anyone can view, no login
-required) with two sections: a points-balance ranking from `profiles`, and
-an accuracy table (bets won/lost, win %, current streak) from the `accuracy`
-view. The accuracy section shows an empty-state message until at least one
-match has been settled.
+required). If there are at least 3 players, the top 3 by points balance are
+shown as a podium (gold/silver/bronze circular avatars with initials, over
+medal-colored bases), with anyone ranked 4th or lower in a plain ranked list
+below. Below that, an accuracy table (bets won/lost, color-coded win %, 🔥
+current streak) is built from the `accuracy` view, with an empty-state
+message until at least one match has been settled.
 
 ### Team flags
 
@@ -168,7 +178,9 @@ balance.
 The whole app has a manual dark/light toggle, defaulting to dark and
 persisted in `localStorage` (`fb-dark`) as a `.dark` class on `<html>` — all
 `dark:` Tailwind styles across the app follow this toggle rather than your
-OS theme. The ☀/🌙 toggle button currently lives in `/matches`' header
-(`src/components/theme-toggle.tsx`); other pages don't have the button yet
-but still render in whichever mode is active. See `CLAUDE.md` ("Theme:
-dark/light toggle") for the implementation.
+OS theme. The ☀/🌙 toggle button (`src/components/theme-toggle.tsx`) lives
+in `/matches`' and `/leaderboard`'s sticky headers. `/login` has no header,
+so it shows its own labeled toggle pill instead
+(`src/app/login/theme-toggle-pill.tsx`). The home page (`/`) doesn't have a
+toggle control yet but still renders in whichever mode is active. See
+`CLAUDE.md` ("Theme: dark/light toggle") for the implementation.

@@ -38,22 +38,25 @@ const STAGE_LABELS: Record<string, string> = {
   final: "Final",
 };
 
-// Matches are stored in UTC (kickoff_at). We render times in UTC rather than
-// the visitor's local timezone so the server-rendered HTML is the same for
-// everyone — converting to local time would need client-side JS and could
-// produce a "hydration mismatch" if the server and browser ever disagreed.
+// Matches are stored in UTC (kickoff_at). We render times in Finnish time
+// (most players are in Finland) using the fixed "Europe/Helsinki" IANA zone
+// rather than the visitor's local timezone, so the server-rendered HTML is
+// still the same for everyone — converting to the visitor's own local time
+// would need client-side JS and could produce a "hydration mismatch" if the
+// server and browser ever disagreed. "Europe/Helsinki" handles the EET/EEST
+// (UTC+2/+3) daylight-saving switch automatically.
 const DATE_FORMAT: Intl.DateTimeFormatOptions = {
   weekday: "short",
   day: "numeric",
   month: "short",
-  timeZone: "UTC",
+  timeZone: "Europe/Helsinki",
 };
 
 const TIME_FORMAT: Intl.DateTimeFormatOptions = {
   hour: "2-digit",
   minute: "2-digit",
   hour12: false,
-  timeZone: "UTC",
+  timeZone: "Europe/Helsinki",
 };
 
 function formatDate(iso: string): string {
@@ -64,7 +67,7 @@ function formatDate(iso: string): string {
 }
 
 function formatTime(iso: string): string {
-  return `${new Date(iso).toLocaleTimeString("en-GB", TIME_FORMAT)} UTC`;
+  return `${new Date(iso).toLocaleTimeString("en-GB", TIME_FORMAT)} Finnish time`;
 }
 
 function stageLabel(match: Match): string {

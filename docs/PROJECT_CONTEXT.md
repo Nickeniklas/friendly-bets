@@ -25,9 +25,17 @@ header, dismissible "How to play" card, tap-a-team-to-bet flow with
 bottom Matches/Leaderboard tab bar. This also introduced an app-wide manual
 dark/light toggle (default dark, `.dark` class + `fb-dark` in localStorage)
 that affects every page's `dark:` styling. The mockup's "Edit bet" control
-was deliberately not implemented — bets remain read-only once placed. Next
-planned UI task: the matching `Leaderboard.dc.html` redesign for
-`/leaderboard` — not started.
+was deliberately not implemented — bets remain read-only once placed.
+
+The same Claude Design bundle's other two pages followed (2026-06-14):
+`/leaderboard` (commit `4ad4e9a`) got a gold/silver/bronze podium for the
+top 3 players, a ranked list below, and the existing accuracy table, all in
+the shared header/bottom-nav/theme shell. `/login` (commit `117e670`) got a
+centered logo + "Sign in" card with the magic-link form, the existing spam/
+timing/double-submit warnings restyled as a "Heads up" card, and its own
+labeled dark/light toggle pill (it has no header to put `ThemeToggle` in).
+All three Claude Design pages are now implemented — no further UI redesign
+work is planned.
 
 ## Project
 A fun, non-commercial prediction/betting site for family & friends, for the 2026 FIFA

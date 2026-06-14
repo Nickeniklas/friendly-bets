@@ -317,6 +317,97 @@ redesign"`. Per the owner's request ("merge this to main so it gets depod"),
 this was fast-forward-merged into `main` and pushed to `origin/main`,
 triggering Vercel's auto-deploy.
 
-### Next up
+### Next up (superseded — see below)
 Implement `Leaderboard.dc.html` (same design bundle, `open_file=Leaderboard.dc.html`)
 for `/leaderboard` — not started.
+
+## Post-v1 — `/leaderboard` redesign (2026-06-14)
+
+Source: same Claude Design bundle as the `/matches` redesign above
+(`Leaderboard.dc.html`). The original handoff link had gone stale (10h+ since
+last load); the owner re-sent a fresh "send to Claude" link from the same
+project, which worked after the usual binary-save + `tar -xzf` extraction
+(see "Gotchas" — WebFetch returns the handoff bundle as a gzip tarball, not
+parsed HTML).
+
+Implemented in `src/app/leaderboard/page.tsx` (rewritten, ~280 lines),
+following `Leaderboard.dc.html`'s layout and the existing `/matches`
+conventions (sticky header, `max-w-[600px]` container, `BottomNav`,
+CSS-variable theming):
+
+- Same sticky header as `/matches` (⚽ Friendly Bets + `ThemeToggle`), but
+  **no balance pill** — not part of this design.
+- "Leaderboard" title + "World Cup 2026 · N players" subtitle.
+- **Podium** (only rendered if there are ≥3 players, to avoid a broken
+  3-column layout): top 3 by `points_balance`, rendered 2nd-1st-3rd
+  left-to-right via `PodiumColumn` + `PODIUM_CONFIG` (per-place sizes/colors
+  for circle avatar, name, points, and medal-colored base). `initials()`
+  derives a 2-letter avatar label from `display_name`; `shortName()`
+  truncates long names so they don't overflow the narrow columns.
+- **Ranked list** for everyone ranked 4th or lower, in a rounded card.
+- **Accuracy table** (existing `accuracy` view): header row (Player/W-L/Win%/
+  Streak) plus one row per player, with win % colored green/red/muted by
+  W-L record and streak shown as `🔥 N` or `—`.
+- New CSS tokens added to `globals.css` (`:root` and `.dark`): `--gold-bg`,
+  `--gold-text`, `--gold-base-bg`, `--silver-bg`, `--silver-text`,
+  `--silver-border`, `--bronze-bg`, `--bronze-text`, `--bronze-border` — exact
+  oklch values taken from `Leaderboard.dc.html`'s `renderVals()`. The existing
+  `--gold` token is reused as the gold podium border (same value in both
+  modes, matching the design).
+
+Verified: `npm run lint` and `npx tsc --noEmit` both pass. Visually checked
+via headless Playwright screenshots against the live dev server (real
+Supabase data, not mocked) — light mode, dark mode, full-page dark, and a
+375px mobile viewport — confirming correct podium colors/sizes per place,
+correct initials/truncation, correct ranked-list and accuracy-table
+rendering, and `console errors: []`. Temporary screenshots and the local-only
+`playwright` install were cleaned up; `git status` showed only
+`src/app/globals.css` and `src/app/leaderboard/page.tsx` modified. Owner
+committed this as `4ad4e9a "leaderboards page redesign"`.
+
+## Post-v1 — `/login` redesign (2026-06-14)
+
+Source: same Claude Design project, fresh handoff link for `Login.dc.html`
+(same bundle also contains `Matches.dc.html`/`Leaderboard.dc.html`, unchanged).
+Same binary-save + `tar -xzf` extraction as above.
+
+`Login.dc.html` is a simple, self-contained centered page (no header, no
+bottom nav — appropriate, since the user isn't signed in yet). Implemented:
+
+- `src/app/login/page.tsx` (rewritten): centered ⚽ emoji / "Friendly Bets" /
+  "WORLD CUP 2026" logo block, then a card containing:
+  - "Sign in" heading + description.
+  - The existing `signInWithMagicLink` form (`src/app/login/actions.ts`,
+    unchanged) with an email input restyled per the design
+    (`var(--input-bg)`, `var(--line)` border, rounded-xl).
+  - `SubmitButton` (`src/app/login/submit-button.tsx`) restyled as a
+    full-width green pill, "Send magic link →" / "Sending..." — same
+    `useFormStatus` pending-state pattern as before, just new styling.
+  - The existing `?message=`/`?error=` feedback, now colored with
+    `var(--green-text)` / `var(--red)`.
+  - The spam/timing/double-submit reminders, restyled as a "HEADS UP" card
+    (📩 check spam/junk, ⏱ 1-minute expiry, ☝️ press once) using new
+    `--warn-bg`/`--warn-border` tokens.
+- `src/app/login/theme-toggle-pill.tsx` (new) — `ThemeTogglePill`, a labeled
+  dark/light toggle ("☀ Light mode" / "🌙 Dark mode") below the card. Uses the
+  same `useTheme`/`fb-dark` mechanism as `ThemeToggle`, just styled as a
+  pill with a text label per the design (`/login` has no header to put the
+  icon-only `ThemeToggle` in).
+- New CSS tokens added to `globals.css` (`:root` and `.dark`): `--input-bg`,
+  `--warn-bg`, `--warn-border` — oklch values from `Login.dc.html`'s
+  `renderVals()`. `--green`, `--gold`, and `--line`/`--foreground`/`--muted`
+  were already defined and matched the design's values exactly, so no other
+  new tokens were needed.
+
+Verified: `npm run lint` and `npx tsc --noEmit` both pass. Visually checked
+via headless Playwright screenshots — dark mode, light mode, and a 375px
+mobile viewport, all at the login route — confirming the layout, colors, and
+copy match `Login.dc.html`, with `console errors: []`. Temporary screenshots
+and script were cleaned up. Owner committed this as `117e670 "Login page
+redesign"`.
+
+### Next up
+All three pages from the Claude Design bundle (`Matches.dc.html`,
+`Leaderboard.dc.html`, `Login.dc.html`) are implemented. No further UI
+redesign work is planned — anything else is a v2 idea (see `docs/PLAN.md`
+"v2 ideas").
