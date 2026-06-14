@@ -4,13 +4,13 @@ import { NextResponse, type NextRequest } from "next/server";
 /**
  * Runs on (almost) every request — see `config.matcher` below.
  *
- * Supabase session tokens expire after a while. This middleware calls
- * `getUser()`, which transparently refreshes an expired token using the
- * refresh cookie, and writes the new cookies onto the response so the
- * browser stays logged in. Without this, sessions would silently die
- * whenever the access token expires between page loads.
+ * Supabase session tokens expire after a while. This proxy (formerly
+ * "middleware") calls `getUser()`, which transparently refreshes an expired
+ * token using the refresh cookie, and writes the new cookies onto the
+ * response so the browser stays logged in. Without this, sessions would
+ * silently die whenever the access token expires between page loads.
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(

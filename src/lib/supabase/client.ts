@@ -3,7 +3,7 @@ import { createBrowserClient } from "@supabase/ssr";
 /**
  * Supabase client for use in Client Components ("use client").
  *
- * Session info is stored in cookies (set by the server client / middleware),
+ * Session info is stored in cookies (set by the server client / proxy),
  * so the browser and server share the same session automatically.
  */
 export function createClient() {

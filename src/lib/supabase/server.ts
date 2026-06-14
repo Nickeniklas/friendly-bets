@@ -8,7 +8,7 @@ import { cookies } from "next/headers";
  * `cookies()` is async in Next.js and read-only when called from a Server
  * Component (rendering a page can't set response cookies). The `setAll`
  * below is wrapped in try/catch so this helper works in that read-only
- * context too — when that happens, `middleware.ts` is responsible for
+ * context too — when that happens, `proxy.ts` is responsible for
  * refreshing the session cookie on the next request instead.
  */
 export async function createClient() {

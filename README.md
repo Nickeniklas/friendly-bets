@@ -17,7 +17,7 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
   auto-deploys on push to `main`.
 - Magic-link auth is built: `/login` sends a sign-in email, `/auth/confirm` completes
   it, and the home page shows the logged-in user's name + points balance with a sign-out
-  button. Session cookies are kept fresh by `src/middleware.ts`. `NEXT_PUBLIC_SITE_URL`
+  button. Session cookies are kept fresh by `src/proxy.ts`. `NEXT_PUBLIC_SITE_URL`
   is set in Vercel and verified live.
 - The match list page (`/matches`) splits all World Cup 2026 fixtures into
   Upcoming/Live/Past tabs (default Upcoming), each grouped by kickoff date under
