@@ -10,13 +10,14 @@ brief current and short.
 `docs/PLAN.md`'s build order (steps 1-8) is DONE:
 
 - Supabase schema, RPC (`settle_match`), `accuracy` view, RLS, and GRANTs are applied.
-- `/api/sync` is deployed, protected by `SYNC_SECRET`, and triggered every 2-3h by
+- `/api/sync` is deployed, protected by `SYNC_SECRET`, and triggered every 5 minutes by
   cron-job.org (syncs openfootball fixtures/results and auto-settles finished matches).
 - Magic-link auth (`/login`, `/auth/confirm`, sign-out) works via custom SMTP (Brevo).
 - `/matches` splits all fixtures into Upcoming/Live/Past tabs, date-grouped under sticky
   headers, with a place-bet form per bettable match and a live pool/multiplier display
   per side. Kickoff times are shown in Finnish time.
-- `/leaderboard` shows points balance + accuracy (W-L, win %, streak).
+- `/leaderboard` shows a points podium (top 3) plus one sortable all-players table
+  (points, bets, correct, wrong, win %, streak).
 - Vercel Web Analytics is enabled.
 
 Post-v1 polish:
@@ -43,13 +44,25 @@ Post-v1 polish:
 - `/leaderboard` got the matching redesign (commit `4ad4e9a`, 2026-06-14),
   implemented from the same Claude Design bundle's `Leaderboard.dc.html`:
   same sticky header (brand + `ThemeToggle`, no balance pill) and bottom nav
-  as `/matches`, a podium for the top 3 players (gold/silver/bronze circular
-  avatars with initials over medal-colored bases — `PODIUM_CONFIG` in
-  `src/app/leaderboard/page.tsx`), a rounded ranked list for 4th place
-  onward, and an accuracy table (W-L, color-coded Win%, 🔥 streak). Falls
-  back to a plain ranked list (no podium) if there are fewer than 3 players.
-  New podium color tokens added to `globals.css`: `--gold-bg`, `--gold-text`,
-  `--gold-base-bg`, `--silver-*`, `--bronze-*` (light + dark).
+  as `/matches`, and a podium for the top 3 players (gold/silver/bronze
+  circular avatars with initials over medal-colored bases —
+  `PODIUM_CONFIG` in `src/app/leaderboard/page.tsx`). Falls back to no podium
+  if there are fewer than 3 players. New podium color tokens added to
+  `globals.css`: `--gold-bg`, `--gold-text`, `--gold-base-bg`, `--silver-*`,
+  `--bronze-*` (light + dark).
+- `/leaderboard`'s ranked list (4th+) and separate accuracy table were later
+  replaced by **one sortable all-players table** (commit `7407268`,
+  2026-06-14) — `src/components/leaderboard-table.tsx` (`LeaderboardTable`,
+  `"use client"`). The podium above is unchanged (still points-only, top 3,
+  not sortable). The table covers every player with columns rank, player,
+  points, bets placed, correct, wrong, win rate %, streak; all six numeric
+  columns are sortable by clicking the header (toggles ascending/descending,
+  ▲/▼ shows the active column; default is points descending), and rank
+  recomputes to match. `src/app/leaderboard/page.tsx` joins `profiles` +
+  the `accuracy` view into one row per player (players with no settled bets
+  default to zeros, since they're absent from `accuracy`) and passes that to
+  `LeaderboardTable`, which sorts entirely client-side — no refetch on
+  re-sort. See `docs/HISTORY.md`.
 - `/login` got the matching redesign (commit `117e670`, 2026-06-14),
   implemented from the same bundle's `Login.dc.html`: centered ⚽ Friendly
   Bets / World Cup 2026 logo, a "Sign in" card (email input + green "Send
@@ -79,11 +92,25 @@ open bugs and no further UI redesign work is planned — anything else is a v2
 idea (see `docs/PLAN.md` "v2 ideas"), not part of the original plan, don't
 start on these without being asked.
 
+- `src/middleware.ts` was renamed to `src/proxy.ts` (commit `4cb951a`,
+  2026-06-14) — Next.js 16 renamed this file convention from "middleware" to
+  "proxy" (`config.matcher` export unchanged). Purely a naming/convention
+  change, no behavior change. If you see references to "middleware" in older
+  docs/comments, they mean this file.
+- `/api/sync`'s cron-job.org schedule was reduced from every 2-3h to every 5
+  minutes (2026-06-14, external config change, no code) — see "Cron setup"
+  below. The openfootball source itself isn't updated live, so this doesn't
+  bring live in-match scores any sooner; the real benefit is that
+  `settle_match` now fires within ~5 minutes of a match crossing the
+  3-hour-post-kickoff threshold, instead of up to ~3h late.
+
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.
 2. Create a new cronjob:
    - URL: `https://friendly-bets-rust.vercel.app/api/sync`
-   - Schedule: every 2-3 hours
+   - Schedule: every 5 minutes (reduced from every 2-3h on 2026-06-14 — see
+     "Status" above; cron-job.org's free tier supports down to 1-minute
+     intervals)
    - Request method: GET
    - Add a custom header: `Authorization: Bearer <SYNC_SECRET>` (value from
      `.env.local` / Vercel project env vars — do not commit it anywhere)
@@ -159,7 +186,8 @@ at 1000 points. Separate accuracy leaderboard tracks raw prediction skill.
 ## Stack (decided — do not re-litigate without being asked)
 - Next.js on Vercel
 - Supabase: Postgres + Auth (magic link) + realtime
-- Match data: openfootball `worldcup.json` (free, no key), synced 1–2×/day
+- Match data: openfootball `worldcup.json` (free, no key), synced every 5
+  minutes via cron-job.org → `/api/sync`
 - No real odds — parimutuel pool only
 
 Owner is new to Next.js. Prefer clear, conventional, well-commented code over clever

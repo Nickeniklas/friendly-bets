@@ -11,10 +11,10 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
 - Supabase schema, RPC (`settle_match`), `accuracy` view, and RLS are live (see
   `supabase/migrations/`).
 - `/api/sync` (`src/app/api/sync/route.ts`) is deployed to Vercel, protected by a
-  shared secret, and triggered every 2-3h by cron-job.org (200 OK confirmed) —
-  pulls openfootball fixtures/results, upserts `matches`, and auto-settles via
-  `settle_match`. The Vercel project is connected to this GitHub repo for
-  auto-deploys on push to `main`.
+  shared secret, and triggered every 5 minutes by cron-job.org (200 OK confirmed,
+  reduced from every 2-3h on 2026-06-14) — pulls openfootball fixtures/results,
+  upserts `matches`, and auto-settles via `settle_match`. The Vercel project is
+  connected to this GitHub repo for auto-deploys on push to `main`.
 - Magic-link auth is built: `/login` sends a sign-in email, `/auth/confirm` completes
   it, and the home page shows the logged-in user's name + points balance with a sign-out
   button. Session cookies are kept fresh by `src/proxy.ts`. `NEXT_PUBLIC_SITE_URL`
@@ -29,8 +29,9 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
   multiplier per side. The bet is inserted via a server action; DB triggers handle
   the bet-window check, balance deduction, and one-bet-per-match rule. Verified
   working end-to-end on the live site.
-- Leaderboard (`/leaderboard`) shows a points-balance ranking and an accuracy
-  table (W-L, win %, streak) from the `accuracy` view. Linked from the home
+- Leaderboard (`/leaderboard`) shows a points podium (top 3) plus one
+  sortable table covering every player (points, bets, correct, wrong, win %,
+  streak) joined from `profiles` and the `accuracy` view. Linked from the home
   page and `/matches`.
 - Vercel Web Analytics is enabled (`@vercel/analytics`).
 - Magic-link emails go through custom SMTP (Brevo) — Supabase's default
@@ -48,9 +49,9 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
   with quick-pick stake chips, and a bottom Matches/Leaderboard tab bar (see
   "Place a bet" and "Theme" below). The dark/light toggle is app-wide.
 - `/leaderboard` has the matching redesign: same sticky header + bottom nav,
-  a podium for the top 3 players (gold/silver/bronze avatars and bases), a
-  ranked list for 4th place onward, and the accuracy table (see
-  "Leaderboard" below).
+  a podium for the top 3 players (gold/silver/bronze avatars and bases), and
+  below it a single sortable table covering every player (see "Leaderboard"
+  below).
 - `/login` has the matching redesign: centered logo, a "Sign in" card with
   email input + magic-link button, the spam/timing/double-submit warnings as
   a "Heads up" card, and a labeled dark/light toggle pill (see "Theme"
@@ -149,11 +150,22 @@ N pts on Team" row instead of the panel (no editing), and the outcome
 
 `/leaderboard` is a read-only Server Component (anyone can view, no login
 required). If there are at least 3 players, the top 3 by points balance are
-shown as a podium (gold/silver/bronze circular avatars with initials, over
-medal-colored bases), with anyone ranked 4th or lower in a plain ranked list
-below. Below that, an accuracy table (bets won/lost, color-coded win %, 🔥
-current streak) is built from the `accuracy` view, with an empty-state
-message until at least one match has been settled.
+shown as a permanent podium (gold/silver/bronze circular avatars with
+initials, over medal-colored bases) — this is points-only and not affected by
+sorting below.
+
+Below the podium, `LeaderboardTable` (`src/components/leaderboard-table.tsx`)
+shows every player in one sortable table: rank, player, points, bets placed,
+correct, wrong, win rate %, and 🔥 streak. The page joins `profiles`
+(points) with the `accuracy` view (bets/correct/wrong/win rate/streak,
+defaulting to 0 for players with no settled bets) into a single row per
+player and passes it to the table as plain data — no schema or view changes.
+
+Tap any column header to sort by it; tapping the active column again toggles
+ascending/descending (an arrow shows the direction). All six numeric columns
+are sortable. Sorting is entirely client-side (`useState`/`useMemo`, no
+refetch), defaults to points descending on load, and the rank column always
+reflects the current sort order.
 
 ### Team flags
 

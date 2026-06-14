@@ -17,7 +17,8 @@ optimize for simplicity and zero running cost, not for scale or security hardeni
 ## Scope
 
 ### v1 (build now)
-- View the match list (fixtures + results), synced from openfootball once or twice a day.
+- View the match list (fixtures + results), synced periodically from openfootball
+  (every 5 minutes — see Stack table below).
 - Place a bet on a match: pick a side, stake points. Points deducted immediately.
 - Parimutuel settlement: winners split the pool proportional to stake.
 - Seed rule: thin pools topped up to 300.
@@ -27,7 +28,8 @@ optimize for simplicity and zero running cost, not for scale or security hardeni
 - Accuracy stats (separate from points): bets placed, correct, wrong, win rate %, streak.
 
 ### Deferred (not v1)
-- Live in-match scores / stats (we only refresh fixtures + final results daily).
+- Live in-match scores / stats (we only refresh fixtures + final results from
+  openfootball's periodically-updated JSON, not a live feed).
 - Real bookmaker odds (parimutuel sidesteps the need entirely).
 - Knockout-bracket-specific logic beyond simple per-match win/lose.
 - Real-time multiplier display can come later; v1 can show current pool state if cheap.
@@ -40,8 +42,8 @@ optimize for simplicity and zero running cost, not for scale or security hardeni
 | Hosting | Vercel | Zero-config Next.js deploys from a GitHub push. Free tier covers this scale comfortably. |
 | Database | Supabase (Postgres) | Postgres + auth + realtime in one free service. Realtime is handy for a live-updating scoreboard. |
 | Auth | Supabase Auth (magic link) | Family-and-friends scope: passwordless email is plenty, no password handling. |
-| Match data | openfootball worldcup.json | Free, public-domain JSON. No API key, no rate limits. Synced every 2–3h; the same job auto-settles finished matches. |
-| Scheduling | External cron (cron-job.org) → `/api/sync` | Vercel Hobby cron is **once-per-day only**; sub-daily is Pro ($20/mo). So the sync+settle lives in a normal API route, triggered by a free external scheduler every 2–3h. Route is protected by a shared secret. |
+| Match data | openfootball worldcup.json | Free, public-domain JSON. No API key, no rate limits. Synced every 5 minutes; the same job auto-settles finished matches. |
+| Scheduling | External cron (cron-job.org) → `/api/sync` | Vercel Hobby cron is **once-per-day only**; sub-daily is Pro ($20/mo). So the sync+settle lives in a normal API route, triggered by a free external scheduler every 5 minutes (reduced from every 2–3h on 2026-06-14 — cron-job.org's free tier supports down to 1-minute intervals). Route is protected by a shared secret. |
 | Odds | None — parimutuel pool | Owner has no football knowledge; parimutuel needs none. Multipliers emerge from how people bet. Real odds aren't reliably free anyway. |
 
 Decisions are settled. Do not re-litigate without being asked.
@@ -57,7 +59,7 @@ predicts nothing; it just divides a pot.
 ## Architecture sketch
 
 ```
-openfootball JSON ──(sync job, every 2–3h)──> Supabase: matches table
+openfootball JSON ──(sync job, every 5 min)──> Supabase: matches table
                                               │   same job then auto-settles:
   Browser (Next.js) ──auth──> Supabase Auth   │   for each match with a result,
         │                                      │   kickoff >3h ago, not yet settled
@@ -82,8 +84,8 @@ and fixed) is in `docs/HISTORY.md`.
 2. DONE — openfootball sync — a protected API route (`/api/sync`) that pulls JSON, upserts into
    `matches`, then auto-settles any match with a result, kickoff >3h ago, not yet settled.
    Deployed to Vercel and triggered by an external scheduler (cron-job.org, free) every
-   2–3h, NOT Vercel cron (Hobby is once-daily only). Route checks a shared secret so only
-   the scheduler can run it.
+   5 minutes (originally every 2–3h, reduced 2026-06-14), NOT Vercel cron (Hobby is
+   once-daily only). Route checks a shared secret so only the scheduler can run it.
 3. DONE — Next.js skeleton + Supabase client helpers + magic-link auth (`/login`,
    `/auth/confirm`, session-refresh middleware, sign-out). Works with Supabase's
    default email template (no custom SMTP needed) via PKCE `code` exchange.
@@ -123,7 +125,8 @@ and fixed) is in `docs/HISTORY.md`.
 - `/leaderboard` redesign (2026-06-14, commit `4ad4e9a`) — implemented from
   the same bundle's `Leaderboard.dc.html`: gold/silver/bronze podium for the
   top 3, ranked list for the rest, accuracy table. See `docs/HISTORY.md` and
-  README ("Leaderboard").
+  README ("Leaderboard"). The ranked list + accuracy table were later
+  replaced — see below.
 - `/login` redesign (2026-06-14, commit `117e670`) — implemented from the
   same bundle's `Login.dc.html`: centered logo, "Sign in" card with magic-link
   button, "Heads up" warnings card, labeled theme-toggle pill. See
@@ -139,10 +142,24 @@ further UI redesign work planned.
   and empty states. See `docs/HISTORY.md` and README ("Match list"). This was
   added after the redesign bundle above, so it's not part of those three
   pages' visual redesign.
+- `/leaderboard`: podium + one sortable all-players table (2026-06-14,
+  commit `7407268`) — replaced the ranked list (4th+) and separate accuracy
+  table with a single table covering every player (rank, player, points,
+  bets, correct, wrong, win rate %, streak), sortable client-side by any of
+  the six numeric columns (click a header to sort, click again to toggle
+  direction; default points descending). The points podium (top 3) is
+  unchanged. See `docs/HISTORY.md` and README ("Leaderboard").
+- `/api/sync` cron interval reduced from every 2-3h to every 5 minutes
+  (2026-06-14, cron-job.org config change, no code) — settlement now fires
+  within ~5 minutes of a match crossing the 3h-post-kickoff threshold instead
+  of up to ~3h late. See `docs/HISTORY.md`.
+- Renamed `src/middleware.ts` → `src/proxy.ts` (2026-06-14, commit `4cb951a`)
+  — Next.js 16 renamed this file convention; `config.matcher` unchanged, no
+  behavior change. See `docs/HISTORY.md`.
 
 ## Open items
 - Exact "thin pool" trigger is decided: top up to **300**. (Settled.)
-- Settlement is automatic: the sync job (every 2–3h) settles any match with a result,
+- Settlement is automatic: the sync job (every 5 minutes) settles any match with a result,
   kickoff >3h ago, not yet settled. Idempotent — already-settled matches are skipped.
   (Settled.)
 - Draw handling is decided: a group-stage draw is a **push** for v1 — all bets on that

@@ -475,3 +475,110 @@ and past."`.
 ### Next up
 No further work planned on `/matches`. Anything else is a v2 idea (see
 `docs/PLAN.md` "v2 ideas").
+
+## Post-v1 — `/leaderboard`: podium + one sortable all-players table (2026-06-14)
+
+Replaced the fixed "ranked list (4th+) + accuracy table" layout from the
+earlier `/leaderboard` redesign (commit `4ad4e9a`) with a single sortable
+table covering every player, per owner request.
+
+### Layout
+- The points podium (top 3 by points balance, gold/silver/bronze
+  avatars/bases) is unchanged — it stays a permanent, points-only showcase
+  and is not affected by sorting.
+- Below it, everything else (ranked list for 4th+, and the separate accuracy
+  table) was removed and replaced by one table: rank, player, points, bets
+  placed, correct, wrong, win rate %, streak.
+
+### Data
+`src/app/leaderboard/page.tsx` now joins two existing queries server-side
+into one row per player — no schema or `accuracy` view changes:
+- `pointsRows` from `profiles` (id, display_name, points_balance), still used
+  for the podium.
+- `accuracyRows` from the `accuracy` view, narrowed to
+  `user_id, bets_placed, correct, wrong, win_rate_pct, streak` with no
+  `.order()` (sorting moved entirely client-side).
+- `accuracyByUserId` is a `Map` from `accuracyRows`; each `pointsRows` entry
+  is merged with its accuracy row (defaulting bets/correct/wrong/win
+  rate/streak to 0 for players with no settled bets, since `accuracy` is an
+  inner join and excludes them) into a `LeaderboardRow[]` passed to the new
+  table component as plain data.
+
+### `LeaderboardTable` (new `src/components/leaderboard-table.tsx`)
+A `"use client"` component that owns sort state (`sortKey`, `sortDirection`,
+`useState`) and derives `sortedRows` via `useMemo` — no refetch, sorting is
+instant. Clicking a column header sorts by that column (default descending);
+clicking the active column again toggles asc/desc. The active column shows a
+▲/▼ arrow. The rank (`#`) column is the row's position in `sortedRows`, so it
+recomputes with every sort. Default sort on load is points descending.
+
+Initial spec made only points/correct/win-rate/streak sortable. The owner
+pointed out that leaving "Bets" and "Wrong" unsortable was inconsistent with
+no real justification ("seems like bad UI... is there something that makes it
+difficult in code/SQL?") — there wasn't, so all six numeric columns
+(`points_balance`, `bets_placed`, `correct`, `wrong`, `win_rate_pct`,
+`streak`) were made sortable.
+
+### `react-hooks/static-components` fix
+The column header was first written as a `SortableHeader` function defined
+*inside* `LeaderboardTable`'s render body, closing over `sortKey`/
+`sortDirection`/`handleSort`. ESLint's `react-hooks/static-components` rule
+flagged this ("Cannot create components during render... Declare components
+outside of render") because a new component identity is created on every
+render. Fixed by moving `SortableHeader` to module scope and passing
+`sortKeyName`, `activeKey`, `direction`, and `onSort` as explicit props at
+each of the 6 call sites.
+
+Verified: `npx eslint` and `npx tsc --noEmit` both pass with no errors/
+warnings. Checked via headless Playwright at `/leaderboard`: the table renders
+all players with points descending by default (▼ on "Points"), clicking each
+of the 6 headers re-sorts instantly with the arrow flipping direction on a
+second click, and the `#` column updates to match. Owner committed this as
+`7407268 "Added sorting to leaderboards"`.
+
+### Next up
+No further leaderboard work planned. Anything else is a v2 idea (see
+`docs/PLAN.md` "v2 ideas").
+
+## Post-v1 — `src/middleware.ts` → `src/proxy.ts` rename (2026-06-14)
+
+`npm run dev` started warning: `The "middleware" file convention is
+deprecated. Please use "proxy" instead.` Next.js 16 renamed this file
+convention; the only changes needed are the file name and the exported
+function name — `config.matcher` is unchanged.
+
+Renamed `src/middleware.ts` → `src/proxy.ts` and its exported `middleware()`
+function → `proxy()` (same body: creates a Supabase server client, calls
+`supabase.auth.getUser()` to transparently refresh an expired session token,
+and writes the refreshed cookies onto the response). Updated two comments
+that referenced `middleware.ts` by name:
+- `src/lib/supabase/server.ts` — "`proxy.ts` is responsible for refreshing
+  the session cookie..."
+- `src/lib/supabase/client.ts` — "(set by the server client / proxy)"
+
+Verified: deleted the old `src/middleware.ts`, restarted `npm run dev` (after
+killing a stale dev server still running the old file, which was holding port
+3000), and confirmed `npm run dev` starts with no deprecation warning and
+`proxy.ts` appears in the per-request timing breakdown. `/matches` and
+`/login` both still return 200 (session-refresh behavior unchanged). Owner
+committed this as `4cb951a "changed depracted naming to proxy"`.
+
+## Post-v1 — `/api/sync` cron interval reduced to 5 minutes (2026-06-14)
+
+External config change only, no code. The owner asked whether the
+`/api/sync` cron-job.org schedule (every 2-3h) could be reduced to ~5
+minutes. Since `/api/sync` is a normal protected API route with no caching
+(`force-dynamic`) and `settle_match` is idempotent, there's no code-side
+reason it can't run more often — cron-job.org's free tier supports down to
+1-minute intervals.
+
+Caveat discussed: openfootball's `worldcup.json` (the data source in
+`src/lib/openfootball.ts`) is a periodically-updated static file, not a live
+feed, so a 5-minute sync doesn't produce "live" scores — its main benefit is
+that `settle_match` now fires within ~5 minutes of a match crossing the
+3h-post-kickoff threshold, instead of up to ~3h late under the old schedule.
+
+The owner changed the cron-job.org schedule directly (no app changes
+required). All "every 2-3h" references across `CLAUDE.md`, `README.md`,
+`docs/PLAN.md`, `docs/SCHEMA.md`, and `docs/PROJECT_CONTEXT.md` were updated
+to "every 5 minutes" to match.

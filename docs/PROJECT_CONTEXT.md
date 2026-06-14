@@ -6,7 +6,7 @@ Self-contained summary — paste into Claude project knowledge so fresh chats st
 **v1 is complete and live** at `https://friendly-bets-rust.vercel.app`. All 8
 build-order steps are DONE: Supabase schema/RLS/RPC (incl. `settle_match` and
 the `accuracy` view), the `/api/sync` sync+settle job (deployed to Vercel,
-cron-job.org triggers it every 2-3h), magic-link auth (`/login`,
+cron-job.org triggers it every 5 minutes), magic-link auth (`/login`,
 `/auth/confirm`, sign-out, custom SMTP via Brevo), the match list page
 (`/matches`, grouped by kickoff date, with a place-bet form, live
 pool/multiplier display, and team flags per match), and the leaderboard +
@@ -44,6 +44,18 @@ Upcoming/Live/Past tabs (default Upcoming), each date-grouped under sticky
 headers with a per-tab match count and empty-state message. New
 `src/app/matches/matches-tabs.tsx`. See `docs/HISTORY.md` for details.
 
+Also 2026-06-14: `/leaderboard`'s ranked list (4th+) and accuracy table
+(commit `4ad4e9a` above) were replaced (commit `7407268`) with a single
+sortable table covering every player — rank, player, points, bets, correct,
+wrong, win rate %, streak — joined server-side from `profiles` and the
+`accuracy` view, sorted client-side (click a header to sort, click again to
+toggle direction; default points descending). The points podium is unchanged.
+Separately, `src/middleware.ts` was renamed to `src/proxy.ts` (commit
+`4cb951a`, Next.js 16's renamed file convention — no behavior change), and
+the `/api/sync` cron-job.org schedule was reduced from every 2-3h to every 5
+minutes (external config only, no code change). See `docs/HISTORY.md` for
+details on all three.
+
 ## Project
 A fun, non-commercial prediction/betting site for family & friends, for the 2026 FIFA
 World Cup. No real money, ever. v1 scope: view matches, bet winner/loser, live-ish
@@ -55,9 +67,10 @@ is exactly why the betting design needs no oddsmaking).
 - Supabase — Postgres + Auth (magic link) + realtime
 - openfootball worldcup.json for fixtures + results (free, no API key)
 - No real odds — a parimutuel betting pool instead
-- Sync + settlement run together in a protected `/api/sync` route, triggered every 2–3h
-  by a free external scheduler (cron-job.org). Vercel Hobby cron is once-daily only, so
-  the schedule lives outside Vercel.
+- Sync + settlement run together in a protected `/api/sync` route, triggered every 5
+  minutes by a free external scheduler (cron-job.org, reduced from every 2-3h on
+  2026-06-14). Vercel Hobby cron is once-daily only, so the schedule lives outside
+  Vercel.
 
 ## How the game works
 - Everyone starts at 1000 points.
@@ -72,7 +85,7 @@ is exactly why the betting design needs no oddsmaking).
 - Separate from points, an accuracy leaderboard tracks bets placed / correct / wrong /
   win rate % / streak — so the game stays meaningful even when pools are thin.
 - Settlement is automatic: the sync job settles any match with a result, kickoff >3h ago,
-  not yet settled. Idempotent, so running every 2–3h can't double-pay.
+  not yet settled. Idempotent, so running every 5 minutes can't double-pay.
 
 ## Key decisions & why
 - Parimutuel over fixed odds: owner has no football knowledge; pool needs none, and

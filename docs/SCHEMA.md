@@ -81,7 +81,7 @@ nowhere; fine, it's a fun game). A healthy pool (≥300) is never topped up.
 MUST be one atomic transaction. Idempotent: if the match is already `settled`, do nothing
 and return. Runs once effectively per match even though the sync job may call it repeatedly.
 
-Triggered automatically by the sync job (every 2–3h), NOT by an admin button. The job
+Triggered automatically by the sync job (every 5 minutes), NOT by an admin button. The job
 selects matches to settle with all of:
 - `result` is set (not null), and
 - `kickoff_at` is more than 3 hours in the past (avoid provisional/half-time results), and
