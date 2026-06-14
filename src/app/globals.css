@@ -84,3 +84,17 @@ body {
     transform: translateY(0);
   }
 }
+
+/* "Nudge" the team buttons toward the user when they tap elsewhere on a
+   match card before picking a team — see match-card.tsx. */
+@keyframes nudge {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-4px);
+  }
+  60% {
+    transform: translateY(0);
+  }
+}
