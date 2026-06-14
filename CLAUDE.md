@@ -13,8 +13,9 @@ brief current and short.
 - `/api/sync` is deployed, protected by `SYNC_SECRET`, and triggered every 2-3h by
   cron-job.org (syncs openfootball fixtures/results and auto-settles finished matches).
 - Magic-link auth (`/login`, `/auth/confirm`, sign-out) works via custom SMTP (Brevo).
-- `/matches` lists all 104 fixtures grouped by kickoff date, with a place-bet form per
-  bettable match and a live pool/multiplier display per side.
+- `/matches` splits all fixtures into Upcoming/Live/Past tabs, date-grouped under sticky
+  headers, with a place-bet form per bettable match and a live pool/multiplier display
+  per side. Kickoff times are shown in Finnish time.
 - `/leaderboard` shows points balance + accuracy (W-L, win %, streak).
 - Vercel Web Analytics is enabled.
 
@@ -59,6 +60,17 @@ Post-v1 polish:
   `ThemeTogglePill` — same `useTheme` hook as `ThemeToggle`, styled per the
   design since `/login` has no header). New tokens added to `globals.css`:
   `--input-bg`, `--warn-bg`, `--warn-border` (light + dark).
+
+- `/matches` kickoff times now display in Finnish time (`Europe/Helsinki`,
+  handles the EET/EEST DST switch automatically) instead of UTC — only the
+  display changed, `kickoff_at` is still stored in UTC. Commit `d92506a`.
+- `/matches` is now split into Upcoming/Live/Past tabs (default Upcoming),
+  each date-grouped under sticky headers with a match count and an
+  empty-state message. Upcoming/Live are soonest-first; Past is
+  most-recent-first. New `src/app/matches/matches-tabs.tsx` (`MatchesTabs`)
+  plus `groupByDay()`/`renderMatchCard()`/`renderDayGroups()` helpers in
+  `src/app/matches/page.tsx`. Commit `f75ddf8`. See `docs/HISTORY.md` for
+  details.
 
 All three pages from the Claude Design bundle (`Matches.dc.html`,
 `Leaderboard.dc.html`, `Login.dc.html`) are now implemented and visually

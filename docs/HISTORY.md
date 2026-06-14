@@ -411,3 +411,67 @@ All three pages from the Claude Design bundle (`Matches.dc.html`,
 `Leaderboard.dc.html`, `Login.dc.html`) are implemented. No further UI
 redesign work is planned — anything else is a v2 idea (see `docs/PLAN.md`
 "v2 ideas").
+
+## Post-v1 — `/matches`: Finnish kickoff times + Upcoming/Live/Past tabs (2026-06-14)
+
+Two follow-up requests on `/matches` in the same session, both small and
+both done:
+
+### Kickoff times shown in Finnish time, not UTC
+`kickoff_at` is still stored in UTC — only the display changed. In
+`src/app/matches/page.tsx`, `DATE_FORMAT`/`TIME_FORMAT` now use
+`timeZone: "Europe/Helsinki"` instead of `"UTC"`, and `formatTime` suffixes
+"Finnish time" instead of "UTC". `Europe/Helsinki` is a fixed IANA zone that
+handles the EET/EEST (UTC+2/+3) daylight-saving switch automatically, so no
+manual offset math is needed — and because it's still a *fixed* zone (not
+the visitor's local one), the server-rendered HTML stays identical for every
+visitor, preserving the original no-hydration-mismatch reasoning.
+
+### Upcoming / Live / Past tabs with date grouping
+`/matches` previously showed every match in one long list grouped by kickoff
+date. It's now split into three tabs (default: **Upcoming**), each showing a
+match count and its own date-grouped list under sticky headers:
+
+- **Upcoming** — not yet settled, kickoff still in the future (these are the
+  bettable ones). Ascending, soonest first.
+- **Live** — not yet settled, kickoff already passed (sync hasn't recorded a
+  result yet — status still `scheduled`/`closed`). Ascending, soonest-started
+  first.
+- **Past** — settled. Descending, most recent result first.
+
+Implementation (`src/app/matches/page.tsx` + new
+`src/app/matches/matches-tabs.tsx`):
+- `groupByDay()` (new helper) groups a match array by `formatDate()`,
+  preserving input order — so it produces chronological groups for an
+  ascending input and reverse-chronological groups for a descending input.
+  Past's matches are `.reverse()`d (the base query is ascending) before being
+  passed in.
+- `renderMatchCard()` and `renderDayGroups()` (new local functions) factor
+  out the per-match `MatchCard` rendering and per-tab date-grouped rendering
+  that used to be one inline loop, so all three tabs share the same code.
+- `MatchesTabs` (new `"use client"` component) renders the Upcoming/Live/Past
+  tab bar with counts and switches which pre-rendered tab content is visible
+  via `useState`. All three tabs' JSX is computed server-side and sent in one
+  RSC payload, so switching tabs is instant — no extra fetch.
+- Sticky stacking: the existing page header (`h-14`/56px, `top-0`) and the
+  new tab bar (`h-12`/48px, `top-14`) are both sticky; each date header sticks
+  at `top-[104px]` (56+48) to clear both.
+- Each tab shows a short empty-state message ("No upcoming matches", "No
+  live matches right now", "No past matches yet") when it has zero matches.
+
+Verified: `npx tsc --noEmit` and `npx eslint src/app/matches` both pass with
+no errors. Checked against the live dev server via `curl` (layout/data logic,
+not new visuals, so Playwright screenshots weren't needed): the three tab
+counts summed to the total match count (Upcoming 98 / Live 1 / Past 7 on
+2026-06-14), Upcoming's date headers ran ascending starting from the current
+day, and temporarily defaulting to the Past tab showed its date headers
+descending (14 -> 13 -> 12 -> 11 Jun) before the default was reverted back to
+Upcoming.
+
+Owner committed the Finnish-time change as part of `d92506a "docs: all pages
+redesigned"` and the tabs as `f75ddf8 "Tabs: games split into Upcoming, live,
+and past."`.
+
+### Next up
+No further work planned on `/matches`. Anything else is a v2 idea (see
+`docs/PLAN.md` "v2 ideas").

@@ -19,9 +19,11 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
   it, and the home page shows the logged-in user's name + points balance with a sign-out
   button. Session cookies are kept fresh by `src/middleware.ts`. `NEXT_PUBLIC_SITE_URL`
   is set in Vercel and verified live.
-- The match list page (`/matches`) shows all 104 World Cup 2026 fixtures grouped by
-  kickoff date (UTC), with stage/group, kickoff time, and status. Readable by anyone
-  (no login needed) and linked from the home page.
+- The match list page (`/matches`) splits all World Cup 2026 fixtures into
+  Upcoming/Live/Past tabs (default Upcoming), each grouped by kickoff date under
+  sticky headers with stage/group, kickoff time (Finnish time), status, and a
+  per-tab match count. Readable by anyone (no login needed) and linked from the
+  home page.
 - Place-bet flow is live: logged-in users can pick a side and a stake (default
   100) on any open match from `/matches`, including a live pool size / implied
   multiplier per side. The bet is inserted via a server action; DB triggers handle
@@ -112,9 +114,21 @@ correctly in both environments.
 
 ### Match list
 
-`/matches` lists all synced fixtures, grouped by kickoff date (UTC). It's a
-read-only Server Component — `matches` is readable by anyone via RLS, so no
-login is required to view it.
+`/matches` is a read-only Server Component — `matches` is readable by anyone
+via RLS, so no login is required to view it. Fixtures are split into three
+tabs, each showing a match count:
+
+- **Upcoming** (default) — not yet settled, kickoff still in the future
+  (these are the bettable ones). Soonest first.
+- **Live** — not yet settled, kickoff already passed (sync hasn't recorded a
+  result yet). Soonest-started first.
+- **Past** — settled. Most recent result first.
+
+Within each tab, matches are grouped under a sticky date header per kickoff
+day. Kickoff times are shown in Finnish time (`Europe/Helsinki`, handles the
+EET/EEST daylight-saving switch automatically) — `kickoff_at` itself is still
+stored in UTC. A tab with no matches shows a short message (e.g. "No live
+matches right now") instead of a blank area.
 
 ### Place a bet
 

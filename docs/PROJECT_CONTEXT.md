@@ -37,6 +37,13 @@ labeled dark/light toggle pill (it has no header to put `ThemeToggle` in).
 All three Claude Design pages are now implemented — no further UI redesign
 work is planned.
 
+Also 2026-06-14 (commits `d92506a`/`f75ddf8`): `/matches` kickoff times now
+show in Finnish time (`Europe/Helsinki`) instead of UTC (`kickoff_at` is
+still stored in UTC — display only), and the match list is now split into
+Upcoming/Live/Past tabs (default Upcoming), each date-grouped under sticky
+headers with a per-tab match count and empty-state message. New
+`src/app/matches/matches-tabs.tsx`. See `docs/HISTORY.md` for details.
+
 ## Project
 A fun, non-commercial prediction/betting site for family & friends, for the 2026 FIFA
 World Cup. No real money, ever. v1 scope: view matches, bet winner/loser, live-ish

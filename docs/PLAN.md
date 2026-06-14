@@ -132,6 +132,14 @@ and fixed) is in `docs/HISTORY.md`.
 All three pages from the Claude Design bundle are now implemented — no
 further UI redesign work planned.
 
+- `/matches` Finnish kickoff times + Upcoming/Live/Past tabs (2026-06-14,
+  commits `d92506a`/`f75ddf8`) — kickoff times now show in Finnish time
+  (`Europe/Helsinki`) instead of UTC, and the match list is split into
+  Upcoming/Live/Past tabs with date-grouped sticky headers, per-tab counts,
+  and empty states. See `docs/HISTORY.md` and README ("Match list"). This was
+  added after the redesign bundle above, so it's not part of those three
+  pages' visual redesign.
+
 ## Open items
 - Exact "thin pool" trigger is decided: top up to **300**. (Settled.)
 - Settlement is automatic: the sync job (every 2–3h) settles any match with a result,
