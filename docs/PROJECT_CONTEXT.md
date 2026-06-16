@@ -13,8 +13,9 @@ Self-contained summary — paste into Claude project knowledge so fresh chats st
 **v1 is complete and live** at `https://friendly-bets-rust.vercel.app`. All 8
 build-order steps are DONE: Supabase schema/RLS/RPC (incl. `settle_match` and
 the `accuracy` view), the `/api/sync` sync+settle job (deployed to Vercel,
-cron-job.org triggers it every 5 minutes), magic-link auth (`/login`,
-`/auth/confirm`, sign-out, custom SMTP via Brevo), the match list page
+cron-job.org triggers it every 5 minutes), auth (`/login`, `/auth/confirm`,
+sign-out) — magic link (custom SMTP via Brevo) plus Google OAuth, both through
+the same PKCE `/auth/confirm` return path, the match list page
 (`/matches`, grouped by kickoff date, with a three-way home/draw/away pick, a
 crowd-split display, and team flags per match), and the leaderboard +
 accuracy page (`/leaderboard`). No known open bugs. The full step-by-step
@@ -64,6 +65,13 @@ Separately, `src/middleware.ts` was renamed to `src/proxy.ts` (commit
 the `/api/sync` cron-job.org schedule was reduced from every 2-3h to every 5
 minutes (external config only, no code change). See `docs/HISTORY.md` for
 details on all three.
+
+Also 2026-06-16 (on the `version2.0` branch): the parimutuel staking model was
+replaced with the fixed-points scoring model (correct +10, underdog bonus +5,
+wrong −5; balances start at 0), the daily login bonus was disabled, and Google
+OAuth sign-in was added to `/login` alongside magic-link auth (same
+`/auth/confirm` PKCE return path; magic-link flow unchanged). See
+`docs/HISTORY.md` for all three.
 
 ## Project
 A fun, non-commercial prediction site for family & friends, for the 2026 FIFA

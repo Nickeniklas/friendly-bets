@@ -161,6 +161,10 @@ further UI redesign work planned.
 - Renamed `src/middleware.ts` → `src/proxy.ts` (2026-06-14, commit `4cb951a`)
   — Next.js 16 renamed this file convention; `config.matcher` unchanged, no
   behavior change. See `docs/HISTORY.md`.
+- Google OAuth sign-in added to `/login` (2026-06-16, `version2.0` branch) —
+  additive alongside magic-link auth, sharing the same `/auth/confirm` PKCE
+  return route; magic-link flow unchanged. Login buttons also got hover/active
+  polish. See `docs/HISTORY.md` and README ("Auth").
 
 ## Open items
 - Scoring is decided: correct +10, underdog (<33% of picks) bonus +5, wrong −5;

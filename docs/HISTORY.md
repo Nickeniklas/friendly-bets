@@ -674,3 +674,71 @@ keeps the change reversible (restore the toast + action to re-enable) and
 avoids a destructive schema change. Verified clean with `tsc --noEmit` +
 `eslint`. Docs updated across `CLAUDE.md`, `README.md`, `docs/SCHEMA.md`,
 `docs/PLAN.md`, `docs/PROJECT_CONTEXT.md`.
+
+## Post-v1 — Google OAuth sign-in (2026-06-16, `version2.0` branch)
+
+Added "Sign in with Google" to `/login` as a second auth option alongside the
+existing magic-link form. Purely additive — the magic-link flow (action, email,
+`/auth/confirm` handling) was not changed.
+
+Why it was simple: Supabase OAuth returns to the app the same way a magic link
+does — a redirect back to `redirectTo` carrying `?code=...`, which the existing
+`/auth/confirm` route already swaps for a session via `exchangeCodeForSession`.
+So **no new callback route was needed**; the OAuth return reuses the magic-link
+route as-is.
+
+Code:
+- `src/app/login/google-button.tsx` (new, `"use client"`) — a `GoogleButton`
+  that calls `supabase.auth.signInWithOAuth({ provider: 'google', options: {
+  redirectTo: \`${window.location.origin}/auth/confirm\` } })` from the browser.
+  OAuth must start client-side (it's a full-page redirect to Google), so unlike
+  the magic-link server action this uses the browser Supabase client. Building
+  `redirectTo` from `window.location.origin` makes it env-aware automatically
+  (localhost in dev, Vercel URL in prod) with no hardcoding — note this is the
+  *browser* origin, distinct from the server-only `NEXT_PUBLIC_SITE_URL` the
+  magic-link action uses. Follows the app convention of disabling + relabelling
+  ("Redirecting...") while the round-trip is in flight. Includes an inline
+  Google "G" SVG so no extra asset is fetched.
+- `src/app/login/page.tsx` — added an "or" divider and rendered `<GoogleButton />`
+  below the magic-link form, styled with the existing design tokens.
+- Hover/active polish: gave both `GoogleButton` and the magic-link
+  `SubmitButton` (`src/app/login/submit-button.tsx`) the same lift + shadow on
+  hover and settle-on-press as the match cards (`hover:-translate-y-0.5
+  hover:shadow-md`, `active:translate-y-0`), since they previously had no hover
+  feedback. Hover effects are explicitly neutralized in the disabled/pending
+  state.
+
+Verified the new-user `profiles` trigger covers Google signups: it's
+`on_auth_user_created`, `AFTER INSERT ON auth.users`
+(`20260609000000_initial_schema.sql`), so it fires for any new user regardless
+of sign-in method. Google doesn't populate `raw_user_meta_data->>'display_name'`,
+so the display name falls back to the email local-part (`split_part(NEW.email,
+'@', 1)`) — Google always returns a verified email, so that's safe. Confirmed
+`npx tsc --noEmit` clean. Nothing in the magic-link flow changed.
+
+Dashboard setup the owner did (one-time, not in code; full steps in `CLAUDE.md`
+"Google OAuth"): Google Cloud OAuth client (Web application) with Supabase's
+callback URL (`https://tutpgfsmrfpetctkdyta.supabase.co/auth/v1/callback`) as
+the authorized redirect URI; OAuth consent screen branded "Friendly Bets" and
+left in Testing mode (testers added as test users); Google provider enabled in
+Supabase with the Client ID/Secret; redirect URLs already covered
+`/auth/confirm`; account linking enabled so a magic-link user and a Google user
+with the same verified email become one account.
+
+Hiccups hit along the way (all expected, documented in `CLAUDE.md`):
+- First button press returned `validation_failed / provider is not enabled` —
+  not a localhost issue; just meant the Google provider hadn't been enabled in
+  the Supabase dashboard yet (the OAuth call hits the hosted project regardless
+  of environment).
+- The Supabase Providers page was hard to find in the current dashboard — it's
+  under Authentication, slug `/auth/providers`, labelled "Sign In / Providers".
+- Google Cloud "Authorized domains" rejects a scheme (`https://`) and may reject
+  `vercel.app` (a public-suffix domain Vercel owns) — those optional fields can
+  be left blank in Testing mode.
+- The consent screen shows the raw `…supabase.co` domain + "name + email"
+  access. Expected for any Supabase-hosted OAuth (Google sees Supabase as the
+  requesting party) and minimal scope; branding softens it, a custom domain
+  (paid) would replace it — not worth it here.
+
+Docs updated across `CLAUDE.md`, `README.md`, `docs/PLAN.md`,
+`docs/PROJECT_CONTEXT.md`.

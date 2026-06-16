@@ -118,6 +118,12 @@ start on these without being asked.
   bring live in-match scores any sooner; the real benefit is that
   `settle_match` now fires within ~5 minutes of a match crossing the
   3-hour-post-kickoff threshold, instead of up to ~3h late.
+- Google OAuth sign-in added to `/login` alongside magic-link auth
+  (2026-06-16) — see "Google OAuth" below. Same `/auth/confirm` PKCE return
+  path; magic-link flow unchanged. The login buttons (Google + magic-link
+  submit) also got hover/active polish (lift + shadow, matching the
+  match-card interaction) — `src/app/login/google-button.tsx` and
+  `src/app/login/submit-button.tsx`.
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.
@@ -131,6 +137,58 @@ start on these without being asked.
      `.env.local` / Vercel project env vars — do not commit it anywhere)
 3. Save, then use cron-job.org's "Run now" / test execution to confirm it
    returns `{"synced": <n>, "settled": [...]}` with HTTP 200.
+
+## Google OAuth (DONE — code + dashboard, reference only)
+Google sign-in was added alongside (not replacing) magic-link auth — purely
+additive, 2026-06-16. The code: a `GoogleButton` client component
+(`src/app/login/google-button.tsx`) calls
+`supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } })`
+from the browser, rendered under an "or" divider on `/login` below the
+magic-link form. The existing `/auth/confirm` route already exchanges the
+returned `?code=...` via `exchangeCodeForSession` — OAuth and magic links use
+the identical PKCE return flow, so **no new callback route was needed**.
+`redirectTo` is built from `window.location.origin` (env-aware: localhost in
+dev, the Vercel URL in prod — no hardcoding; this is the *browser* origin, not
+the server-only `NEXT_PUBLIC_SITE_URL` the magic-link action uses). The
+new-user `profiles` trigger (`on_auth_user_created`, AFTER INSERT on
+auth.users — `20260609000000_initial_schema.sql`) fires for Google signups
+too; since Google doesn't set `raw_user_meta_data->>'display_name'`, the
+display name falls back to the email local-part. The magic-link flow was not
+touched.
+
+Dashboard setup that was done (one-time, NOT in code — keep for reference if
+the project is ever re-provisioned):
+1. **Google Cloud Console** → APIs & Services → Credentials → Create
+   Credentials → OAuth client ID → **Web application**. Authorized redirect
+   URI = the Supabase callback (shown in Supabase's Google provider panel as
+   "Callback URL (for OAuth)"):
+   `https://tutpgfsmrfpetctkdyta.supabase.co/auth/v1/callback`. This is
+   *Supabase's* callback, NOT our `/auth/confirm` — Google → Supabase →
+   Supabase redirects to our `redirectTo`. (No `localhost` entry is needed in
+   Google; Google only ever calls back to Supabase.)
+2. **OAuth consent screen / Branding**: App name "Friendly Bets" + support
+   email. Left in **Testing** mode, so each tester's Google email must be added
+   under Audience → Test users (or publish the app). App name is what the
+   consent screen shows.
+3. **Supabase → Authentication → Providers → Google** (URL slug `/auth/providers`,
+   labelled "Sign In / Providers" in the current dashboard): enabled, Client ID
+   + Client Secret pasted in. "Skip nonce checks" and "Allow users without an
+   email" both left OFF.
+4. **Authentication → URL Configuration → Redirect URLs**: Vercel URL +
+   `http://localhost:3000/**` (already present from magic-link setup; covers
+   `/auth/confirm`).
+5. **Authentication → Settings**: account linking enabled so a magic-link user
+   and a Google user with the same *verified* email become one account. Both
+   providers give verified emails, so this is safe.
+
+Gotcha — the Google consent screen shows the raw
+`tutpgfsmrfpetctkdyta.supabase.co` domain (not "Friendly Bets") as the site
+you're signing in to, and lists "name + email" access. This is **expected** for
+any Supabase-hosted OAuth (Google sees Supabase, which owns the callback, as the
+requesting party) and minimal (just the basic email/profile scopes). Setting the
+consent-screen App name/logo softens it ("Sign in to Friendly Bets"); fully
+replacing the `supabase.co` domain would need a paid Supabase custom domain —
+deliberately not worth it for a family app.
 
 ## Email / SMTP (DONE — reference only)
 Supabase's default/shared email service caps magic-link sends at 2/hour

@@ -24,10 +24,12 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
   reduced from every 2-3h on 2026-06-14) — pulls openfootball fixtures/results,
   upserts `matches`, and auto-settles via `settle_match`. The Vercel project is
   connected to this GitHub repo for auto-deploys on push to `main`.
-- Magic-link auth is built: `/login` sends a sign-in email, `/auth/confirm` completes
-  it, and the home page shows the logged-in user's name + points balance with a sign-out
-  button. Session cookies are kept fresh by `src/proxy.ts`. `NEXT_PUBLIC_SITE_URL`
-  is set in Vercel and verified live.
+- Auth is built two ways: **magic link** (`/login` sends a sign-in email,
+  `/auth/confirm` completes it) and **Google OAuth** (a "Sign in with Google"
+  button on `/login`, same `/auth/confirm` return path). The home page shows the
+  logged-in user's name + points balance with a sign-out button. Session cookies
+  are kept fresh by `src/proxy.ts`. `NEXT_PUBLIC_SITE_URL` is set in Vercel and
+  verified live. See "Auth" below.
 - The match list page (`/matches`) splits all World Cup 2026 fixtures into
   Upcoming/Live/Past tabs (default Upcoming), each grouped by kickoff date under
   sticky headers with stage/group, kickoff time (Finnish time), status, and a
@@ -103,22 +105,37 @@ curl http://localhost:3000/api/sync -H "Authorization: Bearer <your-SYNC_SECRET>
 Expect `{"synced": <count>, "settled": [...]}`. The `matches` table should populate
 with World Cup 2026 fixtures.
 
-### Auth (magic link)
+### Auth (magic link + Google)
+
+`/login` offers two sign-in options, separated by an "or" divider:
+
+1. **Magic link** — enter an email, get a sign-in link.
+2. **Sign in with Google** — OAuth via the Google provider.
+
+Both end at the same `/auth/confirm` route, which exchanges Supabase's PKCE
+`?code=...` for a session (the flow is identical for both). The new-user
+`profiles` trigger fires the same way regardless of which method created the
+account, so a Google signup gets a profile just like a magic-link signup.
 
 One-time setup in the Supabase dashboard — Authentication -> URL Configuration — DONE:
 
 - **Site URL**: your deployed app URL (e.g. `https://friendly-bets-rust.vercel.app`)
 - **Redirect URLs**: add that same URL plus `http://localhost:3000/**`
 
-No email template edits are needed — the default "Magic Link" email works as-is
-(`/auth/confirm` handles Supabase's PKCE `?code=...` redirect). Visit `/login`,
-enter an email, and click the link from the email to sign in.
+No email template edits are needed — the default "Magic Link" email works as-is.
+Visit `/login`, enter an email, and click the link from the email to sign in.
 
 Magic-link emails are sent via custom SMTP (Brevo) — see `CLAUDE.md` ("Email
 / SMTP") for why and how it's configured. First-time recipients should check
 their spam folder, since the sending address has no reputation yet — `/login`
 itself now reminds users of this, so you shouldn't need to repeat it when
 sharing the link.
+
+Google OAuth needs the Google provider enabled in Supabase plus an OAuth client
+in Google Cloud Console (with Supabase's callback URL as the authorized redirect
+URI) and account linking turned on — all done, full step-by-step in `CLAUDE.md`
+("Google OAuth"). The redirect URL is environment-aware (built from the
+browser's `window.location.origin`), so the same code works in dev and prod.
 
 `NEXT_PUBLIC_SITE_URL` is set in both `.env.local` (local dev) and the Vercel
 project's Environment Variables (production), so `emailRedirectTo` resolves
