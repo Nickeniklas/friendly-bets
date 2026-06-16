@@ -582,3 +582,95 @@ The owner changed the cron-job.org schedule directly (no app changes
 required). All "every 2-3h" references across `CLAUDE.md`, `README.md`,
 `docs/PLAN.md`, `docs/SCHEMA.md`, and `docs/PROJECT_CONTEXT.md` were updated
 to "every 5 minutes" to match.
+
+## Post-v1 — model change: parimutuel pool → fixed-points scoring (2026-06-16)
+
+The biggest design change since v1 launched. The owner decided to drop the
+parimutuel staking model entirely (no more stakes, pools, pool-splitting,
+seed-to-300, or push/refund) and replace it with a pure prediction/accuracy
+points model, *and* to promote "draw" from a deferred v2 idea to a real,
+first-class pickable outcome in the same change.
+
+New scoring rules:
+- A bet just picks one of three outcomes — `team1` (home win) / `draw` /
+  `team2` (away win). No stake, nothing deducted on placement.
+- Correct pick: +10. Underdog bonus: +5 if the picked outcome got fewer than
+  33% of all bets on that match (correct underdog = 15 total). Wrong pick: −5.
+- Balances start at 0 and may go negative (intended).
+- Draw is a real outcome: it can be picked, it can win, and it counts toward
+  the bet-distribution math for the underdog bonus. All push/refund-on-draw
+  logic was removed.
+
+Naming decision: the codebase already stored result/pick as `team1`/`team2`
+(matching the `matches.team1`/`team2` columns and the openfootball parser).
+Rather than rename everything to literal `home`/`away`, we kept
+`team1`/`draw`/`team2` as the DB values and label them Home/Draw/Away in the
+UI — lowest-risk, internally consistent. (Asked the owner; they chose "keep
+team1/draw/team2".)
+
+DB changes — new migration
+`supabase/migrations/20260616000000_accuracy_points_model.sql` (no old
+migrations edited):
+- `profiles.points_balance` default 1000 → 0; all existing rows reset to 0;
+  `handle_new_user` updated to seed 0.
+- `bets`: `stake` made nullable + its `> 0` check dropped (kept as an unused
+  legacy column); added `points_awarded int NOT NULL DEFAULT 0`; `pick` CHECK
+  widened from `('team1','team2')` to `('team1','draw','team2')`.
+- Dropped the `deduct_stake` trigger + `deduct_stake_on_bet()` function (so
+  migration `20260611000000_*` and the old stake check are now dead history).
+  Kept `enforce_bet_window` — a bet can still only be placed while scheduled
+  and before kickoff.
+- Rewrote `settle_match`: counts bets per outcome, flags the result outcome as
+  an underdog if it drew `< 33%` of all bets, writes each bet's
+  `points_awarded` (+10 / +15 / −5) and `outcome` (won/lost), then adds
+  `points_awarded` to `points_balance`. Still SECURITY DEFINER, idempotent,
+  `FOR UPDATE`-locked. Seed/pot/push branches all gone.
+- `accuracy` view left unchanged — it never referenced stake/pool, and
+  "correct" (`outcome='won'`) now naturally includes correctly-picked draws.
+
+App changes:
+- `src/app/matches/actions.ts` — `placeBet` drops stake, validates
+  `team1`/`draw`/`team2`, inserts the pick only.
+- `src/app/matches/match-card.tsx` — three-way Home/Draw/Away buttons (🤝 for
+  draw), no stake chips / multipliers; confirm panel shows the +10/+15/−5
+  scoring; result rows use `points_awarded`; shows the crowd split %.
+- `src/app/matches/page.tsx` — replaced the pool/multiplier math with
+  per-outcome pick counts (`Distribution`); passes `drawIsWinner`; fetches
+  `points_awarded` instead of stake/payout.
+- `src/app/matches/intro-card.tsx` — "How to play" copy rewritten for the
+  points model.
+
+Docs swept to the new model: `CLAUDE.md`, `docs/SCHEMA.md`, `docs/PLAN.md`,
+`docs/PROJECT_CONTEXT.md`, and `README.md` (parimutuel/pool/seed/stake/push
+removed; three-way points model documented; "draw as a third pick" promoted
+out of v2; all "starts at 1000" → "starts at 0, may go negative").
+
+Verified locally with `npx tsc --noEmit` and `eslint` (both clean). Manual
+step for the owner: apply the new migration (`supabase db push` or paste into
+the SQL editor) — it resets all balances to 0. Known cosmetic note: matches
+already settled under the old model stay `settled`, so the idempotent guard
+won't re-score them — their bets keep `points_awarded = 0` and render as
+"+0 pts"; clearing old `bets` before relaunch avoids that if desired.
+
+## Post-v1 — daily login bonus disabled (2026-06-16)
+
+Right after the fixed-points model change (above), the owner decided the daily
+login bonus no longer fits: it added 100-400 points to `points_balance` on
+each day's first load, which now directly inflates the prediction score (the
+whole point of the new model is that points reflect prediction skill only).
+With no alternative use for it, it was disabled completely.
+
+Removed (app wiring):
+- `<DailyBonusToast />` mount in `src/app/layout.tsx`.
+- `src/components/daily-bonus-toast.tsx` (deleted).
+- `src/app/actions.ts` (deleted — it only held `claimDailyBonus()`).
+- The home page (`src/app/page.tsx`) streak display + `streak_count` from its
+  `profiles` select.
+
+Left dormant (DB, never called): the `claim_daily_bonus()` RPC and the
+`profiles.last_bonus_date` / `streak_count` columns from
+`20260613000000_daily_bonus.sql`. No migration was written to drop them — this
+keeps the change reversible (restore the toast + action to re-enable) and
+avoids a destructive schema change. Verified clean with `tsc --noEmit` +
+`eslint`. Docs updated across `CLAUDE.md`, `README.md`, `docs/SCHEMA.md`,
+`docs/PLAN.md`, `docs/PROJECT_CONTEXT.md`.

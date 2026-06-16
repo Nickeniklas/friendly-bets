@@ -11,12 +11,15 @@ Extra game data per user. Supabase Auth owns `auth.users`; this hangs off it.
 |---|---|---|
 | id | uuid (PK) | = auth.users.id |
 | display_name | text | shown on leaderboard |
-| points_balance | int | starts at 1000 |
+| points_balance | int | running points total; starts at 0, may go negative |
 | created_at | timestamptz | default now() |
 | last_bonus_date | date | null until first claim; UTC date of last daily-bonus claim |
 | streak_count | int | consecutive daily-bonus claims, capped at 7; default 0 |
 
-New users get a row with `points_balance = 1000` (trigger on auth signup, or on first login).
+New users get a row with `points_balance = 0` (trigger on auth signup). The balance
+is a running total of points earned/lost at settlement — it is no longer a wallet of
+stakable points, and is allowed to go negative. (`last_bonus_date` / `streak_count`
+belong to the daily login bonus, which is disabled as of 2026-06-16 — see below.)
 
 ### `matches`
 One row per game, synced from openfootball.
@@ -47,34 +50,48 @@ with real team names as the bracket resolves — keying on team names there woul
 duplicate rows on re-sync, hence the `num`-based key for knockouts.
 
 ### `bets`
-One row per bet. Stake is deducted from balance the moment this row is created.
+One row per bet — just a prediction of the outcome, no stake. Nothing is deducted on
+placement.
 
 | column | type | notes |
 |---|---|---|
 | id | uuid (PK) | |
 | user_id | uuid (FK→profiles) | |
 | match_id | uuid (FK→matches) | |
-| pick | text | `team1` / `team2` (see draw note) |
-| stake | int | > 0 |
-| payout | int | null until settlement |
-| outcome | text | `won` / `lost` / `refunded` / null |
+| pick | text | `team1` (home win) / `draw` / `team2` (away win) |
+| points_awarded | int | points earned/lost at settlement; default 0, can be negative |
+| stake | int (nullable) | legacy from the old staking model; unused, no longer read/written |
+| payout | int | legacy/unused |
+| outcome | text | `won` / `lost` / null (`refunded` no longer used) |
 | placed_at | timestamptz | default now() |
 
 Rule: a bet may only be inserted while the match is `scheduled` AND now() < kickoff_at.
-Enforce in the DB (RPC or policy), not just UI.
+Enforced in the DB by the `enforce_bet_window` trigger, not just the UI. There is no
+balance/stake check anymore (the old `deduct_stake_on_bet` trigger has been dropped).
+`UNIQUE (user_id, match_id)` keeps it to one prediction per player per match.
 
 ### accuracy — a VIEW, not a table
 Derive from `bets` + `matches` so it can never drift:
-- bets_placed = count of settled, non-refunded bets
-- correct = count where pick matched match.result
-- wrong = bets_placed − correct
+- bets_placed = count of settled bets (outcome `won`/`lost`)
+- correct = count where outcome = `won` (pick matched match.result — includes
+  correctly-picked draws)
+- wrong = bets_placed − correct (outcome = `lost`)
 - win_rate = correct / bets_placed
 - streak = current run of consecutive correct (compute in the query/app)
 
-## The seed / pool rule
-At settlement, `pot = sum(stake)` over all bets on the match.
-If `pot < 300`, set `pot = 300` — the difference is house-funded (points appear from
-nowhere; fine, it's a fun game). A healthy pool (≥300) is never topped up.
+## Scoring rules (the points model)
+There is no pool, no stake, and no seed/top-up. Each bet earns or loses a fixed number
+of points at settlement, based only on whether the prediction was right and how the crowd
+bet:
+
+- **Correct pick: +10 points.**
+- **Underdog bonus: +5** if the player's picked outcome received **fewer than 33%** of all
+  bets placed on that match (a correct underdog pick = **15** total).
+- **Wrong pick: −5 points.**
+
+Points balances may go negative — that's intended. The "underdog" determination is
+crowd-based: with three outcomes, an outcome that few people backed but that wins rewards
+the predictors who went against the grain.
 
 ## Settlement — `settle_match(match_id)` RPC
 
@@ -89,73 +106,57 @@ selects matches to settle with all of:
 
 ```
 function settle_match(match_id):
-  load match
-  if match.status = 'settled': return        # idempotent guard — never double-pay
+  load match (FOR UPDATE)
+  if match.status = 'settled': return        # idempotent guard — never double-award
   assert result is set and kickoff_at < now() - 3h
-  bets = all bets for match_id
-  pot = sum(b.stake for b in bets)
-  if pot < 300: pot = 300
 
-  if result == 'draw':
-      # push — refund every stake, no winners (v1: no 'draw' pick exists)
-      for b in bets:
-          profiles[b.user_id].points_balance += b.stake
-          b.payout = b.stake; b.outcome = 'refunded'
-      match.status = 'settled'; match.settled_at = now(); return
+  total        = count of all bets on the match (across team1/draw/team2)
+  result_count = count of bets where pick == result
+  # the result outcome is an "underdog" if it drew fewer than 33% of the bets
+  underdog = total > 0 and (result_count / total) < 0.33
 
-  winning_pick = result   # 'team1' or 'team2'
-  winners = [b for b in bets if b.pick == winning_pick]
-  winning_stake = sum(b.stake for b in winners)
-
-  if winning_stake == 0:
-      # push — nobody picked the winner; refund every stake
-      for b in bets:
-          profiles[b.user_id].points_balance += b.stake
-          b.payout = b.stake; b.outcome = 'refunded'
-  else:
-      for b in bets:
-          if b.pick == winning_pick:
-              b.payout = round(b.stake / winning_stake * pot)
-              profiles[b.user_id].points_balance += b.payout
-              b.outcome = 'won'
-          else:
-              b.payout = 0; b.outcome = 'lost'   # stake already deducted at placement
+  for b in bets:
+      if b.pick == result:
+          b.points_awarded = 15 if underdog else 10
+          b.outcome = 'won'
+      else:
+          b.points_awarded = -5
+          b.outcome = 'lost'
+      profiles[b.user_id].points_balance += b.points_awarded
 
   match.status = 'settled'; match.settled_at = now()
 ```
 
-Note loser stakes are NOT re-deducted — they were taken when the bet was placed.
-Winners get their proportional slice credited. Net effect for a winner = payout − stake.
+Only correct picks can earn the underdog bonus, and a correct pick's outcome is by
+definition the result — so the whole match shares one underdog determination (based on the
+result outcome's share of bets). A match with zero bets is just flipped to `settled`.
 
-## Daily login bonus — `claim_daily_bonus()` RPC
+## Daily login bonus — `claim_daily_bonus()` RPC (DISABLED 2026-06-16)
 
-Called once per app load (client-side, via a Server Action) for the logged-in
-user. Atomically checks/updates `profiles.last_bonus_date` and `streak_count`:
+**Disabled.** This streak-based bonus inflated the prediction score under the
+fixed-points model, so all app wiring was removed. The RPC and the
+`profiles.last_bonus_date` / `streak_count` columns remain in the DB but
+dormant — nothing calls `claim_daily_bonus()` anymore.
 
-- Already claimed today -> returns 0 (no-op).
-- Claimed yesterday -> streak += 1 (capped at 7).
-- Otherwise (streak broken, or first-ever claim) -> streak resets to 1.
+For reference, it originally worked like this: called once per app load
+(client-side, via a Server Action) for the logged-in user; atomically
+checked/updated `last_bonus_date` and `streak_count`; awarded
+`100 + (streak - 1) * 50` capped at 400 (day 7+), added to `points_balance`.
+To re-enable, restore the toast/action wiring and reconcile the bonus with the
+points model.
 
-Bonus = `100 + (streak - 1) * 50`, capped at 400 (day 7+). Added to
-`points_balance` in the same statement. Dates are UTC (`CURRENT_DATE`),
-consistent with how match times are displayed elsewhere in the app.
-
-## Draw handling (decided — push for v1)
-Group games can draw. For v1, a draw is a **push**: if `result = 'draw'`, refund every
-bet on the match (same path as the no-winner push). Picks stay team1/team2 only — there
-is no 'draw' pick in v1.
-
-In the settlement function this means: if `result = 'draw'`, refund all stakes and skip
-the proportional-payout branch entirely.
-
-v2 idea: add 'draw' as a real third pick with its own pool side. Deferred — it adds UI
-and turns settlement into a three-way split.
+## Draw handling (a first-class outcome)
+Draw is a real, pickable outcome — one of the three picks (`team1` / `draw` / `team2`).
+It can be picked, it can win, and it counts toward the bet-distribution math for the
+underdog bonus. A correctly-predicted draw scores exactly like any other correct pick
+(+10, or +15 if the draw was an underdog). There is no push / refund-on-draw logic
+anymore.
 
 ## RLS (Supabase)
 - `profiles`: a user reads all (leaderboard) but updates none directly — balance only
-  changes via bet placement, settlement RPC, and the daily-bonus RPC.
+  changes via the settlement RPC and the daily-bonus RPC.
 - `bets`: a user inserts only their own (and only on a bettable match); reads all
-  (so the pool is visible).
+  (so the crowd split is visible).
 - `matches`: read for all; writes only by the sync job / admin (service role).
 - Settlement runs as a `security definer` RPC so normal users can't touch balances.
 

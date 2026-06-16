@@ -5,17 +5,28 @@ For a step-by-step account of how v1 was built (including bugs found and fixed a
 way), see `docs/HISTORY.md` — that detail has been moved out of this file to keep this
 brief current and short.
 
-## Status (as of 2026-06-14)
+## Status (as of 2026-06-16)
 **v1 is complete and live** at `https://friendly-bets-rust.vercel.app`. All of
 `docs/PLAN.md`'s build order (steps 1-8) is DONE:
+
+> **2026-06-16 — model change: parimutuel → accuracy/points.** The staking/pool model
+> was replaced with a fixed-points prediction model (see "Scoring rules" below): no
+> stakes/pools/multipliers; players pick `team1`/`draw`/`team2`; correct = +10 (+5 if the
+> outcome got <33% of bets = underdog), wrong = −5; balances start at 0 and may go
+> negative. Draw is now a first-class pickable outcome. DB changes are in
+> `supabase/migrations/20260616000000_accuracy_points_model.sql` (new `points_awarded`
+> column, `pick` allows `draw`, stake column unused, stake-deduction trigger dropped,
+> `settle_match` rewritten, profiles default 0). **Manual step:** apply that migration
+> (`supabase db push` or paste into the SQL editor) — it also resets all existing
+> balances to 0.
 
 - Supabase schema, RPC (`settle_match`), `accuracy` view, RLS, and GRANTs are applied.
 - `/api/sync` is deployed, protected by `SYNC_SECRET`, and triggered every 5 minutes by
   cron-job.org (syncs openfootball fixtures/results and auto-settles finished matches).
 - Magic-link auth (`/login`, `/auth/confirm`, sign-out) works via custom SMTP (Brevo).
 - `/matches` splits all fixtures into Upcoming/Live/Past tabs, date-grouped under sticky
-  headers, with a place-bet form per bettable match and a live pool/multiplier display
-  per side. Kickoff times are shown in Finnish time.
+  headers, with a three-way pick (home/draw/away) per bettable match and a crowd-split
+  (% of picks per outcome) display. Kickoff times are shown in Finnish time.
 - `/leaderboard` shows a points podium (top 3) plus one sortable all-players table
   (points, bets, correct, wrong, win %, streak).
 - Vercel Web Analytics is enabled.
@@ -26,21 +37,25 @@ Post-v1 polish:
   reputation yet (commit `a85216a`).
 - `/matches` now shows a small flag next to each team name (`src/components/flag.tsx`,
   `src/lib/flags.ts`, SVGs in `public/flags/` — see README "Team flags").
-- Daily login bonus with streak multiplier is live: the first page load each UTC
-  day awards 100-400 points (100 + 50/day, capped at day 7 = 400; resets to 1 if a
-  day is skipped), via `claim_daily_bonus()` (migration
-  `20260613000000_daily_bonus.sql`), `claimDailyBonus()` server action
-  (`src/app/actions.ts`), and `DailyBonusToast` (`src/components/daily-bonus-toast.tsx`).
-  Home page also shows the current streak. Verified live by the owner — see
-  `docs/HISTORY.md`.
+- Daily login bonus — **DISABLED 2026-06-16.** It was a streak-based 100-400
+  point bonus on first page load each UTC day; under the new fixed-points
+  scoring model it just inflated the prediction score, so all wiring was
+  removed: `<DailyBonusToast />` unmounted from the layout, and the
+  `claimDailyBonus()` action + `DailyBonusToast` component deleted. The DB
+  objects are left dormant (never called): the `claim_daily_bonus()` RPC and
+  the `profiles.last_bonus_date` / `streak_count` columns from migration
+  `20260613000000_daily_bonus.sql` still exist but nothing invokes them. To
+  re-enable later, restore the toast/action wiring. See `docs/HISTORY.md`.
 - `/matches` got a mobile-first visual redesign (commit `02cd971`, merged to
   `main` 2026-06-13), implemented from a Claude Design mockup
-  (`Matches.dc.html`): sticky header with balance pill + dark/light toggle, a
-  dismissible "How to play" card (`intro-card.tsx`), tap-a-team-to-bet flow
-  (`match-card.tsx` — bet panel with 50/100/200/500pt quick-pick chips and a
-  live potential-win estimate), read-only confirmed-bet/result rows, and a
-  fixed bottom Matches/Leaderboard tab bar (`bottom-nav.tsx`). The dark/light
-  toggle (default dark) is app-wide — see "Theme" below.
+  (`Matches.dc.html`): sticky header with a points pill + dark/light toggle, a
+  dismissible "How to play" card (`intro-card.tsx`), tap-an-outcome predicting
+  (`match-card.tsx`), read-only confirmed-pick/result rows, and a fixed bottom
+  Matches/Leaderboard tab bar (`bottom-nav.tsx`). The dark/light toggle
+  (default dark) is app-wide — see "Theme" below. **Note (2026-06-16):** the
+  original design's stake mechanics (50/100/200/500pt quick-pick chips +
+  live potential-win estimate) were removed in the move to the fixed-points
+  model — the bet panel is now a three-way Home/Draw/Away pick with no stake.
 - `/leaderboard` got the matching redesign (commit `4ad4e9a`, 2026-06-14),
   implemented from the same Claude Design bundle's `Leaderboard.dc.html`:
   same sticky header (brand + `ThemeToggle`, no balance pill) and bottom nav
@@ -180,44 +195,51 @@ instead of following OS preference:
 
 ## What we're building
 A non-commercial World Cup 2026 prediction game for family & friends. No real money.
-People bet points on match winners; a parimutuel pool decides payouts. Everyone starts
-at 1000 points. Separate accuracy leaderboard tracks raw prediction skill.
+Players predict each match's outcome — **home win / draw / away win** (no stake) — and
+earn or lose points at settlement based on whether they were right and how the crowd bet
+(an underdog bonus). Everyone starts at 0 points; balances may go negative. A separate
+accuracy leaderboard tracks raw prediction skill.
 
 ## Stack (decided — do not re-litigate without being asked)
 - Next.js on Vercel
 - Supabase: Postgres + Auth (magic link) + realtime
 - Match data: openfootball `worldcup.json` (free, no key), synced every 5
   minutes via cron-job.org → `/api/sync`
-- No real odds — parimutuel pool only
+- No odds — a fixed-points scoring model (see scoring rules below)
 
 Owner is new to Next.js. Prefer clear, conventional, well-commented code over clever
 tricks. Explain non-obvious Next.js / Supabase choices inline.
 
+## Scoring rules (the points model)
+- Pick one of three outcomes per match: `team1` (home win) / `draw` / `team2` (away win).
+  No stake.
+- **Correct pick: +10 points.**
+- **Underdog bonus: +5** if the player's picked outcome got **fewer than 33%** of all
+  bets placed on that match (correct underdog pick = **15** total).
+- **Wrong pick: −5 points.**
+- Balances may go negative — intended.
+
 ## Hard rules / invariants
 - A bet may be placed ONLY while match.status = 'scheduled' AND now() < kickoff_at.
-  Enforce in the DB, not just the UI.
-- Stake is deducted from points_balance the instant a bet is placed.
+  Enforce in the DB (the `enforce_bet_window` trigger), not just the UI.
+- A bet is just a prediction — `pick` ∈ {`team1`, `draw`, `team2`}, no stake, nothing
+  deducted on placement. `UNIQUE (user_id, match_id)` = one prediction per match.
 - Settlement (`settle_match`) is ONE atomic transaction, idempotent (skips already-settled
-  matches), and is the only path besides bet-placement that changes a balance. It is called
-  automatically by the sync job, not by an admin.
-- Seed rule: at settlement, if pool < 300, treat pool as 300 (house funds the gap).
-- Push rule: if nobody picked the winning side, refund all stakes on that match. Note
-  this applies per-side, not just "everyone": if the *only* bet on a match is on the
-  losing side (winning side has zero stake), that lone bet is refunded too — it looks
-  like "a loss got refunded" but is correct per this rule. Confirmed working as
-  designed (2026-06-13), e.g. South Korea vs Czech Republic where the only bet was 50pts
-  on Czech Republic (lost) and it was refunded because nobody bet on South Korea.
-- Draw (any stage) = push/refund-all for v1 (picks are team1/team2 only; no 'draw' pick).
-  v2 may add 'draw' as a real third pick — not now.
-- Balances never change via direct client writes — only via bet insert, settlement RPC,
-  and the daily-bonus RPC. Lock this down with RLS; settlement and the daily-bonus RPC
-  are both security-definer.
-- Daily login bonus (`claim_daily_bonus`) is awarded at most once per UTC calendar day
-  per user, via a single atomic `UPDATE ... WHERE` guard (not SELECT-then-UPDATE) —
-  this is what makes concurrent page loads/tabs safe. Streak resets to 1 if a day is
-  skipped; caps at 7 (400-point bonus). Called once per app load from a client
-  component (`DailyBonusToast`) via a Server Action (`claimDailyBonus`), not a cron
-  job — explicitly lazy/on-load.
+  matches), and is now the ONLY path that changes a balance (the daily-bonus RPC is
+  disabled — see below). It is called automatically by the sync job, not by an admin. It
+  writes each bet's `points_awarded` and adds it to `profiles.points_balance`.
+- Underdog determination at settlement is crowd-based: the result outcome is an underdog
+  if it drew fewer than 33% of all bets on the match (only correct picks can earn the
+  bonus, and a correct pick's outcome is the result, so the match shares one
+  determination).
+- Draw is a first-class outcome — pickable, can win, counts toward the bet distribution.
+  No push / refund logic exists anymore.
+- Balances never change via direct client writes — only via the settlement RPC. Lock this
+  down with RLS; the settlement RPC is security-definer.
+- Daily login bonus (`claim_daily_bonus`) — **DISABLED 2026-06-16.** All app wiring was
+  removed; the RPC + `profiles.last_bonus_date`/`streak_count` columns remain in the DB but
+  dormant (nothing calls them). It inflated the prediction score under the new model. See
+  the Status note above and `docs/HISTORY.md`.
 
 ## Build order
 All steps DONE — see `docs/PLAN.md` for the full table and `docs/HISTORY.md` for the
@@ -226,10 +248,10 @@ step-by-step build log:
 2. openfootball sync + auto-settle (`/api/sync`, cron-job.org)
 3. Next.js skeleton + Supabase client helpers + magic-link auth
 4. Match list page (`/matches`)
-5. Place-bet flow (`placeBet` server action)
+5. Place-pick flow (`placeBet` server action — three-way pick, no stake)
 6. `settle_match` RPC (idempotent, called by the sync job)
 7. Leaderboard + accuracy view (`/leaderboard`)
-8. Polish: pool / implied multiplier display on `/matches`
+8. Polish: crowd-split (% of picks per outcome) display on `/matches`
 
 ## Gotchas
 - openfootball has no clean match id. Implemented external_ref strategy (see
@@ -267,33 +289,33 @@ step-by-step build log:
   submit, so the round-trip to Supabase is visible and double-clicks are
   prevented. If a user does end up with two emails, tell them to use the
   most recently received one.
-- `deduct_stake_on_bet()` (the AFTER INSERT trigger on `bets` that subtracts
-  the stake from `profiles.points_balance`) must be `SECURITY DEFINER` —
-  triggers run as the inserting role (`authenticated` for a logged-in user),
-  which only has GRANT SELECT on `profiles`, so a non-definer UPDATE fails
-  with "permission denied for table profiles". Fixed in
-  `supabase/migrations/20260611000000_fix_deduct_stake_security_definer.sql`
-  (mirrors the `SECURITY DEFINER` pattern already used by `handle_new_user`
-  and `settle_match`). Same caution applies to any future trigger that writes
-  to a table the calling role doesn't have a GRANT/RLS policy for.
-- Convention: any `<form action={serverAction}>` whose action does a real
-  network round-trip (DB write, Supabase Auth call, etc.) should have its
-  submit button as a small `"use client"` component using
-  `useFormStatus().pending` to show a "Verb-ing..." label and disable the
-  button. See `src/app/login/submit-button.tsx` and
-  `src/app/matches/place-bet-button.tsx` for the pattern. Without this, slow
-  round-trips look unresponsive and invite double-submits, which surface as
-  confusing errors (stale magic-link, duplicate-bet constraint, etc.).
+- The stake-deduction trigger (`deduct_stake_on_bet`) was DROPPED in
+  `20260616000000_accuracy_points_model.sql` — the points model has no stake,
+  so nothing is deducted on bet placement. Migrations `20260611000000_*` (its
+  SECURITY DEFINER fix) and the `stake > 0` check are now dead history; left in
+  place but no longer active. The general caution still applies: any trigger
+  that writes to a table the calling role lacks a GRANT/RLS policy for must be
+  `SECURITY DEFINER` (as `handle_new_user`, `settle_match`, and
+  `claim_daily_bonus` all are).
+- Convention: any action that does a real network round-trip (DB write,
+  Supabase Auth call, etc.) should disable its trigger and show a "Verb-ing..."
+  label while pending. For `<form action={serverAction}>`, do this with a small
+  `"use client"` submit button using `useFormStatus().pending` — see
+  `src/app/login/submit-button.tsx`. `match-card.tsx` instead calls the
+  `placeBet` action directly (not via a `<form>`) and tracks its own `pending`
+  state with `useState` for the same effect. Without this, slow round-trips
+  look unresponsive and invite double-submits, which surface as confusing
+  errors (stale magic-link, duplicate-pick constraint, etc.).
 - Magic-link emails sent via Brevo (see "Email / SMTP" above) may land in
   spam/trash for first-time recipients, since the sending address has no
   reputation yet. `src/app/login/page.tsx` now shows a persistent reminder
   about this, and `src/app/login/actions.ts`'s post-submit success message
   repeats it — so this no longer needs to be said manually when sharing the
   link. This should improve over time as the address sends more mail.
-- `claim_daily_bonus()` is idempotent by design (date-guarded atomic UPDATE),
-  so `DailyBonusToast` (`src/components/daily-bonus-toast.tsx`) can safely
-  call it on every mount without separate "first request of the day"
-  tracking — already-claimed-today calls just return 0 and render nothing.
+- (Historical) `claim_daily_bonus()` was idempotent by design (date-guarded
+  atomic UPDATE) so the now-deleted `DailyBonusToast` could call it on every
+  mount safely. The daily bonus is disabled as of 2026-06-16 (see invariants) —
+  this note is kept only for the idempotent-RPC pattern.
 - If a client-side script mutates an attribute React also controls on an
   element before/during hydration (e.g. `themeScript` toggling the `.dark`
   class on `<html>` — see "Theme" above), React throws a hydration-mismatch

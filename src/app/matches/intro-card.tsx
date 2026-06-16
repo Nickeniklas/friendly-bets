@@ -27,9 +27,9 @@ function dismiss() {
 }
 
 const STEPS = [
-  "Tap a team in an upcoming match to pick your winner",
-  "Choose how many points to wager, then press Place bet",
-  "If your team wins, you earn points — check the leaderboard!",
+  "Predict each match: tap Home win, Draw, or Away win",
+  "Correct picks earn +10 points (+15 if you backed an underdog under 33% of picks)",
+  "Wrong picks lose 5 points — climb the leaderboard with your prediction skill!",
 ];
 
 /** "How to play" card, dismissed permanently via localStorage. */

@@ -3,29 +3,38 @@
 Self-contained summary — paste into Claude project knowledge so fresh chats start informed.
 
 ## Current status (see CLAUDE.md for full detail)
+> **2026-06-16 — scoring model changed: parimutuel pool → fixed-points.** No more
+> stakes/pools/multipliers. Players predict each match (home win / draw / away win) and
+> score fixed points: correct +10, +5 underdog bonus if the picked outcome got <33% of
+> the match's bets, wrong −5. Balances start at 0 and may go negative. Draw is a
+> first-class pickable outcome. The daily login bonus was disabled in the same change.
+> DB changes: `supabase/migrations/20260616000000_accuracy_points_model.sql`.
+
 **v1 is complete and live** at `https://friendly-bets-rust.vercel.app`. All 8
 build-order steps are DONE: Supabase schema/RLS/RPC (incl. `settle_match` and
 the `accuracy` view), the `/api/sync` sync+settle job (deployed to Vercel,
 cron-job.org triggers it every 5 minutes), magic-link auth (`/login`,
 `/auth/confirm`, sign-out, custom SMTP via Brevo), the match list page
-(`/matches`, grouped by kickoff date, with a place-bet form, live
-pool/multiplier display, and team flags per match), and the leaderboard +
+(`/matches`, grouped by kickoff date, with a three-way home/draw/away pick, a
+crowd-split display, and team flags per match), and the leaderboard +
 accuracy page (`/leaderboard`). No known open bugs. The full step-by-step
 build log is in `docs/HISTORY.md`.
 
-Post-v1: a daily login bonus with streak multiplier is also live —
-`claim_daily_bonus()` RPC awards 100-400 points on the first page load each
-UTC day (streak-based, capped at day 7), shown via a toast and the home
-page's streak display.
+Post-v1: a daily login bonus with streak multiplier was added (2026-06-13) but
+**disabled on 2026-06-16** — under the fixed-points scoring model it just
+inflated the prediction score. The app wiring (toast, server action, home-page
+streak) was removed; the `claim_daily_bonus()` RPC and `profiles`
+streak columns remain dormant in the DB. See `docs/HISTORY.md`.
 
 Also post-v1: `/matches` got a mobile-first redesign (2026-06-13, commit
 `02cd971`) built from a Claude Design mockup (`Matches.dc.html`) — sticky
-header, dismissible "How to play" card, tap-a-team-to-bet flow with
-50/100/200/500pt quick-pick chips, read-only confirmed-bet/result rows, and a
-bottom Matches/Leaderboard tab bar. This also introduced an app-wide manual
-dark/light toggle (default dark, `.dark` class + `fb-dark` in localStorage)
-that affects every page's `dark:` styling. The mockup's "Edit bet" control
-was deliberately not implemented — bets remain read-only once placed.
+header, dismissible "How to play" card, tap-an-outcome predicting, read-only
+confirmed-pick/result rows, and a bottom Matches/Leaderboard tab bar. This also
+introduced an app-wide manual dark/light toggle (default dark, `.dark` class +
+`fb-dark` in localStorage) that affects every page's `dark:` styling. The
+mockup's "Edit bet" control was deliberately not implemented — picks remain
+read-only once placed. (The original design's stake quick-pick chips were
+removed on 2026-06-16 with the fixed-points model change above.)
 
 The same Claude Design bundle's other two pages followed (2026-06-14):
 `/leaderboard` (commit `4ad4e9a`) got a gold/silver/bronze podium for the
@@ -57,42 +66,41 @@ minutes (external config only, no code change). See `docs/HISTORY.md` for
 details on all three.
 
 ## Project
-A fun, non-commercial prediction/betting site for family & friends, for the 2026 FIFA
-World Cup. No real money, ever. v1 scope: view matches, bet winner/loser, live-ish
+A fun, non-commercial prediction site for family & friends, for the 2026 FIFA
+World Cup. No real money, ever. v1 scope: view matches, predict home/draw/away, live-ish
 scoreboard. Built by an owner who is new to Next.js and has no football knowledge (which
-is exactly why the betting design needs no oddsmaking).
+is exactly why the scoring design needs no oddsmaking).
 
 ## Stack (settled)
 - Next.js on Vercel
 - Supabase — Postgres + Auth (magic link) + realtime
 - openfootball worldcup.json for fixtures + results (free, no API key)
-- No real odds — a parimutuel betting pool instead
+- No odds — a fixed-points scoring model (correct/underdog/wrong)
 - Sync + settlement run together in a protected `/api/sync` route, triggered every 5
   minutes by a free external scheduler (cron-job.org, reduced from every 2-3h on
   2026-06-14). Vercel Hobby cron is once-daily only, so the schedule lives outside
   Vercel.
 
 ## How the game works
-- Everyone starts at 1000 points.
-- Bet on a match by picking a side and staking points; stake is deducted immediately.
-- All bets on a match form one pool. At settlement, winners split the whole pool
-  proportional to their stake. The "multiplier" emerges from how the crowd bet — no
-  odds are set by anyone.
-- Seed rule: if a match's pool is under 300, it's topped up to 300 (house-funded) so
-  thin pools are still worth playing.
-- Push rule: if nobody picked the winning side, all bets are refunded. A group-stage
-  draw is also treated as a push for v1.
+- Everyone starts at 0 points; balances may go negative.
+- Predict a match by picking one of three outcomes — home win / draw / away win. No
+  stake, nothing deducted on placement.
+- At settlement each bet scores fixed points: correct pick +10; +5 underdog bonus if the
+  picked outcome got fewer than 33% of the match's bets (correct underdog = 15); wrong
+  pick −5. Draw is a first-class outcome that can be picked and can win. No push/refund.
 - Separate from points, an accuracy leaderboard tracks bets placed / correct / wrong /
-  win rate % / streak — so the game stays meaningful even when pools are thin.
+  win rate % / streak.
 - Settlement is automatic: the sync job settles any match with a result, kickoff >3h ago,
-  not yet settled. Idempotent, so running every 5 minutes can't double-pay.
+  not yet settled. Idempotent, so running every 5 minutes can't double-award.
+- (Earlier versions used a parimutuel pool with stakes; replaced by this points model on
+  2026-06-16 — see `docs/HISTORY.md`.)
 
 ## Key decisions & why
-- Parimutuel over fixed odds: owner has no football knowledge; pool needs none, and
-  real odds aren't reliably free anyway.
-- openfootball over a paid API: free, no key, and only daily refresh is needed.
-- Deduct stake instantly: matches the mental model from real betting sites.
-- Seed to 300 only when thin: keeps thin pools fun without inflating points everywhere.
+- Fixed-points scoring over fixed odds: owner has no football knowledge; the model needs
+  none, and it rewards prediction skill directly.
+- Crowd-based underdog bonus over a pool: a "go against the grain" reward without any
+  stakes or pool math; makes draws/underdogs worth picking when you're confident.
+- openfootball over a paid API: free, no key, and only periodic refresh is needed.
 
 ## Build context
 - Building in VS Code with Claude Code.
@@ -100,4 +108,5 @@ is exactly why the betting design needs no oddsmaking).
   explanations of non-obvious choices.
 
 ## v2 ideas
-- Draw as a real third pick (its own pool side). v1 treats a draw as a push/refund-all.
+- (none currently — "draw as a third pick" shipped in v1 on 2026-06-16, replacing the
+  parimutuel pool with a fixed-points scoring model.)

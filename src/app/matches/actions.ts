@@ -8,22 +8,25 @@ export type PlaceBetResult = {
   message: string;
 };
 
+// The three pickable outcomes. team1 = home win, team2 = away win, draw = draw.
+// (We keep the team1/team2 naming to match the matches table's columns and the
+// openfootball result values; the UI labels them home/away.)
+const VALID_PICKS = ["team1", "draw", "team2"] as const;
+
 /**
- * Places a bet: insert a row into `bets`. The DB does the heavy lifting —
- * two triggers (see 20260609000000_initial_schema.sql) run on insert:
- *   - `enforce_bet_window` aborts if match.status != 'scheduled' or kickoff
- *     has passed
- *   - `deduct_stake_on_bet` atomically checks and deducts points_balance,
- *     aborting if the user can't afford the stake
- * The UNIQUE (user_id, match_id) constraint also blocks a second bet on the
- * same match. Called directly from match-card.tsx (not via a <form action>),
- * so the result can show as a toast and trigger a router.refresh() without a
- * full page navigation — the user stays right where they were.
+ * Places a bet: insert a row into `bets`. There's no stake in the accuracy
+ * model — a bet just records which outcome the player picked. The DB still
+ * enforces the bet window via the `enforce_bet_window` trigger (aborts if the
+ * match isn't 'scheduled' or kickoff has passed), and the UNIQUE
+ * (user_id, match_id) constraint blocks a second bet on the same match.
+ *
+ * Called directly from match-card.tsx (not via a <form action>), so the result
+ * can show as a toast and trigger a router.refresh() without a full page
+ * navigation — the user stays right where they were.
  */
 export async function placeBet(formData: FormData): Promise<PlaceBetResult> {
   const matchId = formData.get("matchId") as string;
   const pick = formData.get("pick") as string;
-  const stake = Number(formData.get("stake"));
 
   const supabase = await createClient();
   const {
@@ -34,7 +37,7 @@ export async function placeBet(formData: FormData): Promise<PlaceBetResult> {
     redirect("/login");
   }
 
-  if ((pick !== "team1" && pick !== "team2") || !Number.isInteger(stake) || stake <= 0) {
+  if (!VALID_PICKS.includes(pick as (typeof VALID_PICKS)[number])) {
     return { status: "error", message: "Invalid bet" };
   }
 
@@ -42,7 +45,6 @@ export async function placeBet(formData: FormData): Promise<PlaceBetResult> {
     user_id: user.id,
     match_id: matchId,
     pick,
-    stake,
   });
 
   if (error) {
@@ -53,9 +55,6 @@ export async function placeBet(formData: FormData): Promise<PlaceBetResult> {
 }
 
 function friendlyBetError(message: string): string {
-  if (message.includes("insufficient points balance")) {
-    return "You don't have enough points for that stake.";
-  }
   if (message.includes("betting is closed")) {
     return "Betting is closed for this match.";
   }
