@@ -56,6 +56,19 @@ the `/api/sync` cron-job.org schedule was reduced from every 2-3h to every 5
 minutes (external config only, no code change). See `docs/HISTORY.md` for
 details on all three.
 
+Also 2026-06-14, three more `/matches` polish items: (1) sticky date headers
+restyled as a "washi tape" banner — bold green strip with clipped corners,
+date + match count (commit `9d9b4bd`); (2) match cards gained a "Bets open"
+hint bar (shown before a team is picked, even to logged-in users who haven't
+read the instructions), whole-card/team-button hover effects, and a
+bounce+green-ring "nudge" on the team buttons when tapping elsewhere on the
+card first (commit `290bcc0`); (3) placing a bet no longer redirects/scrolls
+to top — `placeBet` (`src/app/matches/actions.ts`) returns a result instead
+of `redirect()`ing, shown as a self-dismissing toast, with `router.refresh()`
+updating balance/pool/bet state in place (commit `f731c44`, and
+`place-bet-button.tsx` was deleted as part of this). See `docs/HISTORY.md`
+for all three.
+
 ## Project
 A fun, non-commercial prediction/betting site for family & friends, for the 2026 FIFA
 World Cup. No real money, ever. v1 scope: view matches, bet winner/loser, live-ish

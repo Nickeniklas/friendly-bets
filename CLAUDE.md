@@ -84,6 +84,26 @@ Post-v1 polish:
   plus `groupByDay()`/`renderMatchCard()`/`renderDayGroups()` helpers in
   `src/app/matches/page.tsx`. Commit `f75ddf8`. See `docs/HISTORY.md` for
   details.
+- `/matches`' sticky date headers are now a "washi tape" style banner —
+  bold green strip with the date + match count and clipped/angled corners
+  (`clipPath: polygon(...)` in `renderDayGroups()`,
+  `src/app/matches/page.tsx`). Commit `9d9b4bd`.
+- Match cards on `/matches` (`match-card.tsx`) got three polish items: a
+  "Bets open" hint bar (shown on any bettable match with no bet yet and no
+  team picked, even before a team is tapped — copy/CTA varies by login
+  state), whole-card + team-button hover effects (`shadow-md`, team buttons
+  also lift via `-translate-y-0.5`), and a "nudge" animation (450ms bounce +
+  green ring on both team buttons, via `@keyframes nudge` in `globals.css`)
+  when tapping anywhere else on a bettable card before picking a team. Commit
+  `290bcc0`.
+- Placing a bet on `/matches` no longer causes a full page navigation/scroll-
+  to-top. `placeBet` (`src/app/matches/actions.ts`) returns a
+  `PlaceBetResult` instead of `redirect()`ing; `match-card.tsx` calls it
+  directly from a click handler, shows the result as a self-dismissing toast
+  fixed above the bottom nav, and on success calls `router.refresh()` to
+  re-fetch balance/pool/bet state in place. `place-bet-button.tsx` was
+  deleted (its `useFormStatus` pattern no longer applies — see Gotchas).
+  Commit `f731c44`.
 
 All three pages from the Claude Design bundle (`Matches.dc.html`,
 `Leaderboard.dc.html`, `Login.dc.html`) are now implemented and visually
@@ -280,10 +300,36 @@ step-by-step build log:
   network round-trip (DB write, Supabase Auth call, etc.) should have its
   submit button as a small `"use client"` component using
   `useFormStatus().pending` to show a "Verb-ing..." label and disable the
-  button. See `src/app/login/submit-button.tsx` and
-  `src/app/matches/place-bet-button.tsx` for the pattern. Without this, slow
-  round-trips look unresponsive and invite double-submits, which surface as
-  confusing errors (stale magic-link, duplicate-bet constraint, etc.).
+  button. See `src/app/login/submit-button.tsx` for the pattern. Without
+  this, slow round-trips look unresponsive and invite double-submits, which
+  surface as confusing errors (stale magic-link, duplicate-bet constraint,
+  etc.). Exception: `placeBet` (`src/app/matches/actions.ts`) is called
+  directly from a click handler instead of a `<form action>` — see the
+  "Placing a bet..." entry under Status — because it needs to show a toast
+  and `router.refresh()` without navigating, which a `<form>`+`redirect()`
+  can't do. `match-card.tsx` tracks its own `pending` state for the button
+  instead of `useFormStatus`.
+- CSS specificity: team-pick buttons in `match-card.tsx` set
+  `background`/`borderColor`/`color` via inline `style={teamStyle(...)}`
+  (computed per-render for selected/winner/flagged states). Inline styles
+  beat Tailwind `:hover`/animation classes for the *same* properties, so any
+  new hover/highlight effect on these buttons must use properties
+  `teamStyle()` doesn't set — e.g. `transform`/`translate` (hover lift) or
+  `box-shadow`/`ring` (hover shadow, the "nudge" ring) — or it'll be silently
+  overridden. Also: Tailwind v4's `-translate-y-*` utilities set a separate
+  `translate` CSS property, not `transform` — check
+  `getComputedStyle(el).translate`, not `.transform`, when verifying via
+  Playwright.
+- `eslint-plugin-react-hooks` v7's `set-state-in-effect` rule flags any
+  synchronous `setState` call directly in a `useEffect` body — including the
+  common "copy a server action's result into state + trigger a side effect"
+  pattern (e.g. `useActionState` + an effect that does
+  `setToast(result); router.refresh()`). If you hit this, move the logic into
+  the event handler that triggers the action instead (event handlers are
+  always fine for `setState`) — see how `match-card.tsx`'s `handlePlaceBet`
+  does this. `setState` inside a `setTimeout`/promise callback *within* an
+  effect (e.g. an auto-dismiss timer, like `DailyBonusToast`) is NOT flagged
+  — only direct, synchronous calls in the effect body are.
 - Magic-link emails sent via Brevo (see "Email / SMTP" above) may land in
   spam/trash for first-time recipients, since the sending address has no
   reputation yet. `src/app/login/page.tsx` now shows a persistent reminder

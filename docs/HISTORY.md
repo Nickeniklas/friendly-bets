@@ -582,3 +582,143 @@ The owner changed the cron-job.org schedule directly (no app changes
 required). All "every 2-3h" references across `CLAUDE.md`, `README.md`,
 `docs/PLAN.md`, `docs/SCHEMA.md`, and `docs/PROJECT_CONTEXT.md` were updated
 to "every 5 minutes" to match.
+
+## Post-v1 — `/matches`: "washi tape" match-day date headers (2026-06-14)
+
+Small visual tweak, owner request: make the sticky date headers on `/matches`
+"pop" more — "maybe even a 'sticker' type thing".
+
+Presented three preview options (tilted date sticker, washi-tape banner, stamp
+badge); owner picked **washi-tape banner**. In
+`src/app/matches/page.tsx`'s `renderDayGroups()`, each day's plain
+muted-text sticky header was replaced with a full-width green banner: bold
+uppercase date + match count, `clipPath: polygon(8px 0, 100% 0, calc(100% -
+8px) 100%, 0 100%)` for the angled "torn tape" edges, sitting inside a sticky
+wrapper (`top-[104px]`, same offset as before, clearing the page header +
+tab bar) so it still covers cards scrolling underneath.
+
+Verified via headless Playwright screenshots of `/matches` in both dark and
+light mode, and during sticky scroll (header stays pinned, torn edges don't
+show gaps). Owner committed this as `9d9b4bd "Imroved match day banners."`.
+
+### Next up
+No further `/matches` redesign work planned — anything else is a v2 idea (see
+`docs/PLAN.md` "v2 ideas").
+
+## Post-v1 — match cards: "Bets open" bar, hover effects, nudge animation (2026-06-14)
+
+Three related polish requests on `/matches` match cards, all in
+`src/app/matches/match-card.tsx` (plus one new `@keyframes` in
+`src/app/globals.css`):
+
+1. **"Bets open" bar** — previously, the only hint that a match was open for
+   betting was a "Log in to bet" link shown to logged-out users only.
+   Logged-in users got no hint at all until they tapped a team. Now, any
+   bettable match with no existing bet and no team picked yet shows a green-
+   dot "Bets open" bar above the card's bottom edge — "Bets open — tap a team
+   to pick your winner" when logged in, or "Bets open" + a "Log in to bet"
+   link when logged out. It disappears once a team is picked (the bet panel
+   takes over) or once a bet exists (the confirmed-bet/result row takes over).
+
+2. **Hover effects** — every card gets a subtle `shadow-md` on hover (whole
+   card). When a user can actually place a bet (`canPick`), the two team
+   buttons additionally lift 2px and gain their own shadow on hover, to mark
+   them as the clickable elements.
+
+3. **Nudge animation** — before a team is picked, tapping anywhere on a
+   bettable card *except* the team buttons (pool info, empty space, etc.)
+   triggers a 450ms bounce (`@keyframes nudge` in `globals.css`) plus a green
+   ring (`ring-2 ring-[var(--green)] ring-offset-2`) on both team buttons, to
+   draw the eye to where betting actually starts. `handleCardClick` ignores
+   clicks inside the team buttons themselves (via `homeRef`/`awayRef`) and
+   stops applying once `selected !== null` (bet panel open).
+
+### CSS specificity gotcha resolved
+The team buttons' colors are set via inline `style={teamStyle(...)}`
+(`background`/`borderColor`/`color`, computed per-render for
+selected/winner/flagged states). Inline styles win over Tailwind `:hover`/
+animation classes for the *same* CSS properties, so the new hover/nudge
+effects deliberately use properties `teamStyle()` never sets —
+`transform`/`translate` (lift) and `box-shadow`/`ring` (shadow + outline) —
+so they layer on top without being overridden. Also note: Tailwind v4's
+`-translate-y-*` utilities set a separate `translate` CSS property, not
+`transform` — `getComputedStyle(el).transform` stays `'none'` even when the
+utility is active; check `.translate` instead.
+
+Verified: `npx tsc --noEmit` clean. Visually checked via a temporary
+`/dev-preview` route rendering `<MatchCard>` with `loggedIn`/`bettable` props
+set directly (no real auth needed) — confirmed the nudge ring/bounce render
+correctly and `getComputedStyle` shows `boxShadow`/`translate` changing on
+hover. Temporary route and scripts removed after verification. Owner
+committed this as `290bcc0 "Match cards improvements: Bets open bar for all
+matches, hover effect on teams, nudge to highlight click teams"`.
+
+### Next up
+No further `/matches` redesign work planned — anything else is a v2 idea (see
+`docs/PLAN.md` "v2 ideas").
+
+## Post-v1 — bet placement: toast + no scroll-jump (2026-06-14)
+
+Owner feedback: placing a bet caused the page to refresh/scroll back to top,
+which "feels unintentional" and forced a self-check that the bet went
+through. Wanted a confirmation toast and to stay anchored at the match card
+instead of jumping to the top.
+
+### Root cause
+`placeBet` (`src/app/matches/actions.ts`) was a `<form action={placeBet}>`
+server action that always ended with `redirect("/matches?message=...")` or
+`redirect("/matches?error=...")`. Even though the destination is the same
+page, a server-action `redirect()` is a full navigation — the page
+re-renders from scratch and the browser scrolls to top, and the `?message=`/
+`?error=` banner at the top of `page.tsx` was easy to miss while scrolled
+down.
+
+### Fix
+- `placeBet` no longer redirects on success/error — it now returns
+  `PlaceBetResult` (`{ status: "success" | "error", message: string }`). The
+  `!user` (expired-session) edge case still `redirect("/login")`, since the
+  UI already gates the bet panel on `loggedIn`.
+- `match-card.tsx` no longer wraps the submit in a `<form>`. "Place bet →" is
+  a plain button with an `onClick={handlePlaceBet}` async handler that builds
+  a `FormData`, calls `placeBet(formData)` directly (still a valid way to
+  invoke a `"use server"` function from a Client Component), and tracks its
+  own `pending` state (replacing the `useFormStatus`-based
+  `PlaceBetButton`, which is now deleted).
+- On completion, the result renders as a small self-dismissing toast (green
+  for success, red for error) fixed just above the bottom nav
+  (`bottom-[76px]`, `pointer-events-none` so it never blocks taps), auto-
+  hidden after 3 seconds via a `useEffect`/`setTimeout`.
+- On success only: `setSelected(null)` collapses the bet panel and
+  `router.refresh()` re-fetches the page's server data (balance, pool,
+  `existingBet`) **without navigating** — so scroll position is untouched.
+  Because `MatchCard` instances are keyed by `match.id`, each card's local
+  state (toast, tab selection, etc.) survives the refresh.
+- Removed the now-dead `?message=`/`?error=` query-param banner from
+  `page.tsx` (its `searchParams` prop) and deleted
+  `src/app/matches/place-bet-button.tsx`.
+
+### `react-hooks/set-state-in-effect` detour
+First attempt used `useActionState` + an effect that copied the action's
+result into a `toast` state and called `router.refresh()`/`setSelected(null)`
+synchronously inside the effect body. `eslint-plugin-react-hooks` v7's new
+`set-state-in-effect` rule flags any synchronous `setState` call directly in
+an effect body (classic "derived state" smell, even when the setState is
+really "react to an action result"). Resolved by moving the whole flow into
+the `onClick` handler (an event handler, where `setState` is always fine) and
+dropping `useActionState` — only the toast's auto-dismiss timer remains in a
+`useEffect`, and its `setState` is inside a `setTimeout` callback (nested
+function), which the rule doesn't flag — same pattern as
+`DailyBonusToast`.
+
+Verified: `npx tsc --noEmit` and `npx eslint src/app/matches` both pass with
+no errors. Checked via a temporary `/dev-preview` route + Playwright: opening
+the bet panel renders the new "Place bet →" button correctly, and clicking it
+(with no auth session in the preview) cleanly redirects to `/login` — proving
+the handler runs without crashing. Temporary route and scripts removed after
+verification. Owner committed this as `f731c44 "Betting UI/UX improvements:
+stay at match card after betting, bet placed toaster, removed old
+confirmation."`.
+
+### Next up
+No further `/matches` work planned — anything else is a v2 idea (see
+`docs/PLAN.md` "v2 ideas").

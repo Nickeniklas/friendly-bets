@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 const SETTLE_DELAY_HOURS = 3;
 
 /**
- * Protected sync + auto-settle job, triggered every 2-3h by an external
+ * Protected sync + auto-settle job, triggered every 5 minutes by an external
  * scheduler (cron-job.org), per CLAUDE.md / docs/PLAN.md.
  *
  * 1. Pull the openfootball fixture/results feed and upsert into `matches`.

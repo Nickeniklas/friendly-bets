@@ -156,6 +156,19 @@ further UI redesign work planned.
 - Renamed `src/middleware.ts` → `src/proxy.ts` (2026-06-14, commit `4cb951a`)
   — Next.js 16 renamed this file convention; `config.matcher` unchanged, no
   behavior change. See `docs/HISTORY.md`.
+- `/matches` "washi tape" date headers (2026-06-14, commit `9d9b4bd`) —
+  sticky per-day headers restyled as a bold green clipped-corner banner with
+  the date + match count. See `docs/HISTORY.md` and README ("Match list").
+- Match card polish: "Bets open" bar, hover effects, nudge animation
+  (2026-06-14, commit `290bcc0`) — a green "Bets open" hint on any bettable
+  match before a team is picked, whole-card/team-button hover
+  shadow+lift, and a bounce+ring "nudge" on the team buttons when tapping
+  elsewhere on the card first. See `docs/HISTORY.md` and README ("Place a
+  bet").
+- Bet placement: toast + no scroll-jump (2026-06-14, commit `f731c44`) —
+  placing a bet no longer redirects/scrolls to top; `placeBet` returns a
+  result shown as a self-dismissing toast, and `router.refresh()` updates
+  the page in place. See `docs/HISTORY.md` and README ("Place a bet").
 
 ## Open items
 - Exact "thin pool" trigger is decided: top up to **300**. (Settled.)

@@ -126,25 +126,29 @@ tabs, each showing a match count:
 - **Past** — settled. Most recent result first.
 
 Within each tab, matches are grouped under a sticky date header per kickoff
-day. Kickoff times are shown in Finnish time (`Europe/Helsinki`, handles the
-EET/EEST daylight-saving switch automatically) — `kickoff_at` itself is still
-stored in UTC. A tab with no matches shows a short message (e.g. "No live
-matches right now") instead of a blank area.
+day, styled as a bold green "washi tape" banner (clipped/angled corners) with
+the date and that day's match count. Kickoff times are shown in Finnish time
+(`Europe/Helsinki`, handles the EET/EEST daylight-saving switch automatically)
+— `kickoff_at` itself is still stored in UTC. A tab with no matches shows a
+short message (e.g. "No live matches right now") instead of a blank area.
 
 ### Place a bet
 
-On `/matches`, tap either team in a match that's still `scheduled` and hasn't
-kicked off yet to select your pick — a bet panel slides open below the match
-card with quick-pick stake chips (50 / 100 / 200 / 500 pts, disabled above
-your current balance) and a live "potential win" estimate based on the
-current pool/multiplier. Tap "Place bet →" to submit, or "Cancel" to close the
-panel without betting. Submitting inserts a row into `bets`; the DB triggers
-from `supabase/migrations/20260609000000_initial_schema.sql` (plus the
+On `/matches`, any match that's still open for betting shows a green "Bets
+open" hint (with a "Log in to bet" link if you're logged out). Tap either
+team to select your pick — a bet panel slides open below the match card with
+quick-pick stake chips (50 / 100 / 200 / 500 pts, disabled above your current
+balance) and a live "potential win" estimate based on the current
+pool/multiplier. Tap "Place bet →" to submit, or "Cancel" to close the panel
+without betting. Submitting inserts a row into `bets`; the DB triggers from
+`supabase/migrations/20260609000000_initial_schema.sql` (plus the
 `SECURITY DEFINER` fix in `20260611000000_...`) enforce the bet window,
 deduct the stake from `points_balance`, and block a second bet on the same
-match. Once you've bet on a match, the card shows a read-only "Bet placed —
-N pts on Team" row instead of the panel (no editing), and the outcome
-(won/lost/refunded, with payout) once `settle_match` runs.
+match. The result shows as a small toast (success or error) without
+navigating away or scrolling — the card refreshes in place. Once you've bet
+on a match, the card shows a read-only "Bet placed — N pts on Team" row
+instead of the panel (no editing), and the outcome (won/lost/refunded, with
+payout) once `settle_match` runs.
 
 ### Leaderboard
 
