@@ -2,14 +2,15 @@
 
 ## What this is
 
-A fun, non-commercial prediction/betting site for family and friends, centered on the
-2026 FIFA World Cup. No real money, ever. People predict match winners, points move
-around a shared pool, and a leaderboard shows who's doing well — both on points and on
-raw prediction accuracy.
+A fun, non-commercial prediction site for family and friends, centered on the
+2026 FIFA World Cup. No real money, ever. People predict each match's outcome
+(home win / draw / away win), earn or lose points based on whether they were right
+(with an underdog bonus), and a leaderboard shows who's doing well — both on points and
+on raw prediction accuracy.
 
 Project tagline (v1 scope):
 > Site for making predictions on 2026 football games.
-> v.1 — View matches · Bet winner/loser · Live scoreboard.
+> v.1 — View matches · Predict home/draw/away · Live scoreboard.
 
 Scale: small (family + friends, ~10–50 people). This shapes everything below — we
 optimize for simplicity and zero running cost, not for scale or security hardening.
@@ -19,20 +20,18 @@ optimize for simplicity and zero running cost, not for scale or security hardeni
 ### v1 (build now)
 - View the match list (fixtures + results), synced periodically from openfootball
   (every 5 minutes — see Stack table below).
-- Place a bet on a match: pick a side, stake points. Points deducted immediately.
-- Parimutuel settlement: winners split the pool proportional to stake.
-- Seed rule: thin pools topped up to 300.
-- Push rule: if nobody picked the winning side, all bets on that match are refunded.
-- Everyone starts with 1000 points.
-- Leaderboard: points balance.
+- Predict a match: pick one of three outcomes — home win / draw / away win. No stake.
+- Points settlement: correct pick +10 (+5 underdog bonus if the picked outcome got
+  fewer than 33% of the match's bets); wrong pick −5.
+- Everyone starts at 0 points; balances may go negative.
+- Leaderboard: total points earned/lost.
 - Accuracy stats (separate from points): bets placed, correct, wrong, win rate %, streak.
 
 ### Deferred (not v1)
 - Live in-match scores / stats (we only refresh fixtures + final results from
   openfootball's periodically-updated JSON, not a live feed).
-- Real bookmaker odds (parimutuel sidesteps the need entirely).
-- Knockout-bracket-specific logic beyond simple per-match win/lose.
-- Real-time multiplier display can come later; v1 can show current pool state if cheap.
+- Real bookmaker odds (the fixed-points model sidesteps the need entirely).
+- Knockout-bracket-specific logic beyond simple per-match outcome prediction.
 
 ## Stack & decisions
 
@@ -44,17 +43,19 @@ optimize for simplicity and zero running cost, not for scale or security hardeni
 | Auth | Supabase Auth (magic link) | Family-and-friends scope: passwordless email is plenty, no password handling. |
 | Match data | openfootball worldcup.json | Free, public-domain JSON. No API key, no rate limits. Synced every 5 minutes; the same job auto-settles finished matches. |
 | Scheduling | External cron (cron-job.org) → `/api/sync` | Vercel Hobby cron is **once-per-day only**; sub-daily is Pro ($20/mo). So the sync+settle lives in a normal API route, triggered by a free external scheduler every 5 minutes (reduced from every 2–3h on 2026-06-14 — cron-job.org's free tier supports down to 1-minute intervals). Route is protected by a shared secret. |
-| Odds | None — parimutuel pool | Owner has no football knowledge; parimutuel needs none. Multipliers emerge from how people bet. Real odds aren't reliably free anyway. |
+| Odds | None — fixed-points scoring | Owner has no football knowledge; the points model needs none. Going against the crowd and being right earns a bonus, automatically, with no oddsmaking. |
 
 Decisions are settled. Do not re-litigate without being asked.
 
-## Why parimutuel (the core design choice)
+## Why a fixed-points model (the core design choice)
 
-No fixed odds set by anyone. All bets on a match go into one pot. Winners split the
-whole pot proportional to their stake. The effective "multiplier" emerges from crowd
-behavior — heavy betting on a favorite makes the underdog payout large, automatically.
-This requires zero oddsmaking skill from the admin, and it can't be "wrong" because it
-predicts nothing; it just divides a pot.
+No stakes, no pool, no odds. Each match has three outcomes (home / draw / away); a bet
+just predicts one. At settlement a correct pick scores +10, a wrong pick −5, and a
+correct pick of an outcome that fewer than 33% of bettors chose gets a +5 underdog
+bonus. This requires zero oddsmaking from the admin, rewards genuine prediction skill
+(especially brave-but-right calls), and the crowd-based bonus emerges automatically from
+how people bet. (Earlier versions used a parimutuel pool — see `docs/HISTORY.md`; that
+was replaced on 2026-06-16.)
 
 ## Architecture sketch
 
@@ -63,14 +64,15 @@ openfootball JSON ──(sync job, every 5 min)──> Supabase: matches table
                                               │   same job then auto-settles:
   Browser (Next.js) ──auth──> Supabase Auth   │   for each match with a result,
         │                                      │   kickoff >3h ago, not yet settled
-        │  place bet (deduct now) ──> bets table + profiles.points_balance
+        │  place pick (no stake) ──> bets table
         │                                      │        │
         │  view matches/leaderboard <── matches / profiles / accuracy view
         │                                      │        ▼
         │                              settle_match() RPC (atomic):
-        │                                pot = sum(stakes); if pot < 300 -> pot = 300
-        │                                winners split pot by stake; losers already paid
-        │                                if no winning bettor -> refund all stakes (push)
+        │                                total/result_count = bet distribution
+        │                                underdog = result outcome got <33% of bets
+        │                                each bet: +10 (+5 underdog) correct, -5 wrong
+        │                                add points_awarded to profiles.points_balance
         │                                flip match.status -> settled (idempotent: skip if already)
 ```
 
@@ -93,18 +95,19 @@ and fixed) is in `docs/HISTORY.md`.
    `NEXT_PUBLIC_SITE_URL` to Vercel project env vars (see CLAUDE.md).
 4. DONE — Match list page (read matches). `src/app/matches/page.tsx`, grouped
    by kickoff date, linked from the home page.
-5. DONE — Place-bet flow (insert bet + deduct balance, guarded by match status).
-   `src/app/matches/page.tsx` shows a pick/stake form per bettable match;
+5. DONE — Place-pick flow (insert bet, guarded by match status). `src/app/matches/page.tsx`
+   shows a three-way pick (home/draw/away) per bettable match;
    `src/app/matches/actions.ts` (`placeBet`) just inserts into `bets` — the
-   step-1 DB triggers/constraints do all enforcement.
+   `enforce_bet_window` trigger + UNIQUE constraint do all enforcement.
 6. DONE — Settlement RPC (built as part of step 1; called by the sync job in step 2; idempotent).
+   Rewritten 2026-06-16 for the fixed-points model.
 7. DONE — Leaderboard (points) + accuracy stats view. `src/app/leaderboard/page.tsx`,
    linked from the home page and `/matches`.
-8. DONE — Polish: show current pool / implied multiplier on each match.
-   `src/app/matches/page.tsx` fetches all bets' `match_id, pick, stake`
-   alongside the matches query (RLS allows anon read), sums stakes per
-   match/pick, and shows "Pool: N pts · TeamA Xx · TeamB Yx" on each match
-   card, mirroring `settle_match`'s pot/seed-to-300 and payout-multiplier math.
+8. DONE — Polish: show the crowd split (% of picks per outcome) on each match.
+   `src/app/matches/page.tsx` fetches all bets' `match_id, pick` alongside the
+   matches query (RLS allows anon read), counts picks per match/outcome, and
+   shows "X% Home · Y% Draw · Z% Away" on each card — which also surfaces the
+   underdog-bonus mechanic (any outcome under 33%).
 
 ## Post-v1 polish (done)
 - Spam/trash folder reminder on `/login` (2026-06-13) — Brevo's sending address has
@@ -112,16 +115,18 @@ and fixed) is in `docs/HISTORY.md`.
   `docs/HISTORY.md` and `CLAUDE.md` ("Email / SMTP").
 - Team flags on `/matches` (2026-06-13) — small flag next to each team name, via
   flag-icons SVGs in `public/flags/`. See `docs/HISTORY.md` and README ("Team flags").
-- Daily login bonus with streak multiplier (2026-06-13) — first page load each UTC
-  day awards 100-400 points based on a login streak (capped at 7 days), via
-  `claim_daily_bonus()` RPC + a toast on every page. See `docs/HISTORY.md` and
-  README ("Daily login bonus").
+- Daily login bonus with streak multiplier (2026-06-13) — **disabled 2026-06-16**
+  (it inflated the prediction score under the fixed-points model). Awarded 100-400
+  points on first page load each UTC day based on a login streak. App wiring removed;
+  `claim_daily_bonus()` RPC + `profiles` streak columns remain dormant. See
+  `docs/HISTORY.md` and README ("Daily login bonus (disabled)").
 - `/matches` mobile-first redesign + app-wide dark/light toggle (2026-06-13,
   commit `02cd971`) — implemented from a Claude Design mockup
-  (`Matches.dc.html`): sticky header, "How to play" card, tap-to-bet flow with
-  quick-pick stake chips, bottom tab bar, and a manual dark/light theme
-  applied across the whole app. See `docs/HISTORY.md`, `CLAUDE.md` ("Theme:
-  dark/light toggle"), and README ("Place a bet", "Theme").
+  (`Matches.dc.html`): sticky header, "How to play" card, tap-to-pick flow,
+  bottom tab bar, and a manual dark/light theme applied across the whole app.
+  (The original quick-pick stake chips were removed on 2026-06-16 with the
+  fixed-points model change.) See `docs/HISTORY.md`, `CLAUDE.md` ("Theme:
+  dark/light toggle"), and README ("Place a prediction", "Theme").
 - `/leaderboard` redesign (2026-06-14, commit `4ad4e9a`) — implemented from
   the same bundle's `Leaderboard.dc.html`: gold/silver/bronze podium for the
   top 3, ranked list for the rest, accuracy table. See `docs/HISTORY.md` and
@@ -156,28 +161,20 @@ further UI redesign work planned.
 - Renamed `src/middleware.ts` → `src/proxy.ts` (2026-06-14, commit `4cb951a`)
   — Next.js 16 renamed this file convention; `config.matcher` unchanged, no
   behavior change. See `docs/HISTORY.md`.
-- `/matches` "washi tape" date headers (2026-06-14, commit `9d9b4bd`) —
-  sticky per-day headers restyled as a bold green clipped-corner banner with
-  the date + match count. See `docs/HISTORY.md` and README ("Match list").
-- Match card polish: "Bets open" bar, hover effects, nudge animation
-  (2026-06-14, commit `290bcc0`) — a green "Bets open" hint on any bettable
-  match before a team is picked, whole-card/team-button hover
-  shadow+lift, and a bounce+ring "nudge" on the team buttons when tapping
-  elsewhere on the card first. See `docs/HISTORY.md` and README ("Place a
-  bet").
-- Bet placement: toast + no scroll-jump (2026-06-14, commit `f731c44`) —
-  placing a bet no longer redirects/scrolls to top; `placeBet` returns a
-  result shown as a self-dismissing toast, and `router.refresh()` updates
-  the page in place. See `docs/HISTORY.md` and README ("Place a bet").
+- Google OAuth sign-in added to `/login` (2026-06-16, `version2.0` branch) —
+  additive alongside magic-link auth, sharing the same `/auth/confirm` PKCE
+  return route; magic-link flow unchanged. Login buttons also got hover/active
+  polish. See `docs/HISTORY.md` and README ("Auth").
 
 ## Open items
-- Exact "thin pool" trigger is decided: top up to **300**. (Settled.)
+- Scoring is decided: correct +10, underdog (<33% of picks) bonus +5, wrong −5;
+  balances start at 0 and may go negative. (Settled.)
 - Settlement is automatic: the sync job (every 5 minutes) settles any match with a result,
   kickoff >3h ago, not yet settled. Idempotent — already-settled matches are skipped.
   (Settled.)
-- Draw handling is decided: a group-stage draw is a **push** for v1 — all bets on that
-  match are refunded. Picks are team1/team2 only. (Settled.)
+- Draw handling is decided: draw is a first-class pickable outcome (one of
+  team1/draw/team2), scored exactly like any other correct/wrong pick. No push/refund.
+  (Settled — promoted from a v2 idea on 2026-06-16.)
 
 ## v2 ideas (not now)
-- Draw as a third pick — let people bet on a draw, with its own pool side. Adds UI and
-  changes settlement (three sides instead of two). Deferred to v2.
+- (none currently)

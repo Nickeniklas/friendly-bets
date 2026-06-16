@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Space_Grotesk } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
-import { DailyBonusToast } from "@/components/daily-bonus-toast";
 import { ThemeProvider, themeScript } from "@/components/theme-provider";
 import "./globals.css";
 
@@ -32,10 +31,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="min-h-full flex flex-col">
-        <ThemeProvider>
-          {children}
-          <DailyBonusToast />
-        </ThemeProvider>
+        <ThemeProvider>{children}</ThemeProvider>
         <Analytics />
       </body>
     </html>

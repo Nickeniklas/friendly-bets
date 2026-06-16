@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { signInWithMagicLink } from "./actions";
 import { SubmitButton } from "./submit-button";
+import { GoogleButton } from "./google-button";
 import { ThemeTogglePill } from "./theme-toggle-pill";
 
 export default async function LoginPage({
@@ -36,6 +38,17 @@ export default async function LoginPage({
 
           <SubmitButton />
         </form>
+
+        {/* "or" divider between the two sign-in options */}
+        <div className="my-5 flex items-center gap-3">
+          <div className="h-px flex-1 bg-[var(--line)]" />
+          <span className="text-[12px] font-semibold tracking-[0.08em] text-[var(--muted)] uppercase">
+            or
+          </span>
+          <div className="h-px flex-1 bg-[var(--line)]" />
+        </div>
+
+        <GoogleButton />
 
         {message && (
           <p className="mt-3 text-sm text-[var(--green-text)]">{message}</p>
@@ -77,6 +90,16 @@ export default async function LoginPage({
             </div>
           </div>
         </div>
+
+        {/* Let people browse the app without an account — /matches and
+            /leaderboard are public (read-only without login). They can sign in
+            later when they want to predict. */}
+        <Link
+          href="/matches"
+          className="mt-4 block text-center text-sm font-semibold text-[var(--muted)] underline-offset-4 hover:text-[var(--foreground)] hover:underline"
+        >
+          View matches as guest →
+        </Link>
       </div>
 
       <ThemeTogglePill />

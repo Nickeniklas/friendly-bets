@@ -583,6 +583,178 @@ required). All "every 2-3h" references across `CLAUDE.md`, `README.md`,
 `docs/PLAN.md`, `docs/SCHEMA.md`, and `docs/PROJECT_CONTEXT.md` were updated
 to "every 5 minutes" to match.
 
+## Post-v1 — model change: parimutuel pool → fixed-points scoring (2026-06-16)
+
+The biggest design change since v1 launched. The owner decided to drop the
+parimutuel staking model entirely (no more stakes, pools, pool-splitting,
+seed-to-300, or push/refund) and replace it with a pure prediction/accuracy
+points model, *and* to promote "draw" from a deferred v2 idea to a real,
+first-class pickable outcome in the same change.
+
+New scoring rules:
+- A bet just picks one of three outcomes — `team1` (home win) / `draw` /
+  `team2` (away win). No stake, nothing deducted on placement.
+- Correct pick: +10. Underdog bonus: +5 if the picked outcome got fewer than
+  33% of all bets on that match (correct underdog = 15 total). Wrong pick: −5.
+- Balances start at 0 and may go negative (intended).
+- Draw is a real outcome: it can be picked, it can win, and it counts toward
+  the bet-distribution math for the underdog bonus. All push/refund-on-draw
+  logic was removed.
+
+Naming decision: the codebase already stored result/pick as `team1`/`team2`
+(matching the `matches.team1`/`team2` columns and the openfootball parser).
+Rather than rename everything to literal `home`/`away`, we kept
+`team1`/`draw`/`team2` as the DB values and label them Home/Draw/Away in the
+UI — lowest-risk, internally consistent. (Asked the owner; they chose "keep
+team1/draw/team2".)
+
+DB changes — new migration
+`supabase/migrations/20260616000000_accuracy_points_model.sql` (no old
+migrations edited):
+- `profiles.points_balance` default 1000 → 0; all existing rows reset to 0;
+  `handle_new_user` updated to seed 0.
+- `bets`: `stake` made nullable + its `> 0` check dropped (kept as an unused
+  legacy column); added `points_awarded int NOT NULL DEFAULT 0`; `pick` CHECK
+  widened from `('team1','team2')` to `('team1','draw','team2')`.
+- Dropped the `deduct_stake` trigger + `deduct_stake_on_bet()` function (so
+  migration `20260611000000_*` and the old stake check are now dead history).
+  Kept `enforce_bet_window` — a bet can still only be placed while scheduled
+  and before kickoff.
+- Rewrote `settle_match`: counts bets per outcome, flags the result outcome as
+  an underdog if it drew `< 33%` of all bets, writes each bet's
+  `points_awarded` (+10 / +15 / −5) and `outcome` (won/lost), then adds
+  `points_awarded` to `points_balance`. Still SECURITY DEFINER, idempotent,
+  `FOR UPDATE`-locked. Seed/pot/push branches all gone.
+- `accuracy` view left unchanged — it never referenced stake/pool, and
+  "correct" (`outcome='won'`) now naturally includes correctly-picked draws.
+
+App changes:
+- `src/app/matches/actions.ts` — `placeBet` drops stake, validates
+  `team1`/`draw`/`team2`, inserts the pick only.
+- `src/app/matches/match-card.tsx` — three-way Home/Draw/Away buttons (🤝 for
+  draw), no stake chips / multipliers; confirm panel shows the +10/+15/−5
+  scoring; result rows use `points_awarded`; shows the crowd split %.
+- `src/app/matches/page.tsx` — replaced the pool/multiplier math with
+  per-outcome pick counts (`Distribution`); passes `drawIsWinner`; fetches
+  `points_awarded` instead of stake/payout.
+- `src/app/matches/intro-card.tsx` — "How to play" copy rewritten for the
+  points model.
+
+Docs swept to the new model: `CLAUDE.md`, `docs/SCHEMA.md`, `docs/PLAN.md`,
+`docs/PROJECT_CONTEXT.md`, and `README.md` (parimutuel/pool/seed/stake/push
+removed; three-way points model documented; "draw as a third pick" promoted
+out of v2; all "starts at 1000" → "starts at 0, may go negative").
+
+Verified locally with `npx tsc --noEmit` and `eslint` (both clean). Manual
+step for the owner: apply the new migration (`supabase db push` or paste into
+the SQL editor) — it resets all balances to 0. Known cosmetic note: matches
+already settled under the old model stay `settled`, so the idempotent guard
+won't re-score them — their bets keep `points_awarded = 0` and render as
+"+0 pts"; clearing old `bets` before relaunch avoids that if desired.
+
+## Post-v1 — daily login bonus disabled (2026-06-16)
+
+Right after the fixed-points model change (above), the owner decided the daily
+login bonus no longer fits: it added 100-400 points to `points_balance` on
+each day's first load, which now directly inflates the prediction score (the
+whole point of the new model is that points reflect prediction skill only).
+With no alternative use for it, it was disabled completely.
+
+Removed (app wiring):
+- `<DailyBonusToast />` mount in `src/app/layout.tsx`.
+- `src/components/daily-bonus-toast.tsx` (deleted).
+- `src/app/actions.ts` (deleted — it only held `claimDailyBonus()`).
+- The home page (`src/app/page.tsx`) streak display + `streak_count` from its
+  `profiles` select.
+
+Left dormant (DB, never called): the `claim_daily_bonus()` RPC and the
+`profiles.last_bonus_date` / `streak_count` columns from
+`20260613000000_daily_bonus.sql`. No migration was written to drop them — this
+keeps the change reversible (restore the toast + action to re-enable) and
+avoids a destructive schema change. Verified clean with `tsc --noEmit` +
+`eslint`. Docs updated across `CLAUDE.md`, `README.md`, `docs/SCHEMA.md`,
+`docs/PLAN.md`, `docs/PROJECT_CONTEXT.md`.
+
+## Post-v1 — Google OAuth sign-in (2026-06-16, `version2.0` branch)
+
+Added "Sign in with Google" to `/login` as a second auth option alongside the
+existing magic-link form. Purely additive — the magic-link flow (action, email,
+`/auth/confirm` handling) was not changed.
+
+Why it was simple: Supabase OAuth returns to the app the same way a magic link
+does — a redirect back to `redirectTo` carrying `?code=...`, which the existing
+`/auth/confirm` route already swaps for a session via `exchangeCodeForSession`.
+So **no new callback route was needed**; the OAuth return reuses the magic-link
+route as-is.
+
+Code:
+- `src/app/login/google-button.tsx` (new, `"use client"`) — a `GoogleButton`
+  that calls `supabase.auth.signInWithOAuth({ provider: 'google', options: {
+  redirectTo: \`${window.location.origin}/auth/confirm\` } })` from the browser.
+  OAuth must start client-side (it's a full-page redirect to Google), so unlike
+  the magic-link server action this uses the browser Supabase client. Building
+  `redirectTo` from `window.location.origin` makes it env-aware automatically
+  (localhost in dev, Vercel URL in prod) with no hardcoding — note this is the
+  *browser* origin, distinct from the server-only `NEXT_PUBLIC_SITE_URL` the
+  magic-link action uses. Follows the app convention of disabling + relabelling
+  ("Redirecting...") while the round-trip is in flight. Includes an inline
+  Google "G" SVG so no extra asset is fetched.
+- `src/app/login/page.tsx` — added an "or" divider and rendered `<GoogleButton />`
+  below the magic-link form, styled with the existing design tokens.
+- Hover/active polish: gave both `GoogleButton` and the magic-link
+  `SubmitButton` (`src/app/login/submit-button.tsx`) the same lift + shadow on
+  hover and settle-on-press as the match cards (`hover:-translate-y-0.5
+  hover:shadow-md`, `active:translate-y-0`), since they previously had no hover
+  feedback. Hover effects are explicitly neutralized in the disabled/pending
+  state.
+
+Verified the new-user `profiles` trigger covers Google signups: it's
+`on_auth_user_created`, `AFTER INSERT ON auth.users`
+(`20260609000000_initial_schema.sql`), so it fires for any new user regardless
+of sign-in method. Google doesn't populate `raw_user_meta_data->>'display_name'`,
+so the display name falls back to the email local-part (`split_part(NEW.email,
+'@', 1)`) — Google always returns a verified email, so that's safe. Confirmed
+`npx tsc --noEmit` clean. Nothing in the magic-link flow changed.
+
+Dashboard setup the owner did (one-time, not in code; full steps in `CLAUDE.md`
+"Google OAuth"): Google Cloud OAuth client (Web application) with Supabase's
+callback URL (`https://tutpgfsmrfpetctkdyta.supabase.co/auth/v1/callback`) as
+the authorized redirect URI; OAuth consent screen branded "Friendly Bets" and
+left in Testing mode (testers added as test users); Google provider enabled in
+Supabase with the Client ID/Secret; redirect URLs already covered
+`/auth/confirm`; account linking enabled so a magic-link user and a Google user
+with the same verified email become one account.
+
+Hiccups hit along the way (all expected, documented in `CLAUDE.md`):
+- First button press returned `validation_failed / provider is not enabled` —
+  not a localhost issue; just meant the Google provider hadn't been enabled in
+  the Supabase dashboard yet (the OAuth call hits the hosted project regardless
+  of environment).
+- The Supabase Providers page was hard to find in the current dashboard — it's
+  under Authentication, slug `/auth/providers`, labelled "Sign In / Providers".
+- Google Cloud "Authorized domains" rejects a scheme (`https://`) and may reject
+  `vercel.app` (a public-suffix domain Vercel owns) — those optional fields can
+  be left blank in Testing mode.
+- The consent screen shows the raw `…supabase.co` domain + "name + email"
+  access. Expected for any Supabase-hosted OAuth (Google sees Supabase as the
+  requesting party) and minimal scope; branding softens it, a custom domain
+  (paid) would replace it — not worth it here.
+
+Docs updated across `CLAUDE.md`, `README.md`, `docs/PLAN.md`,
+`docs/PROJECT_CONTEXT.md`.
+
+Two small follow-ups in the same session:
+- **Sign-out in the redesigned headers.** The redesigned `/matches` and
+  `/leaderboard` had no way to sign out (only the plain `/` home page did). Added
+  a reusable `src/components/sign-out-button.tsx` — a Server Component wrapping
+  `<form action={signOut}>` (the existing `auth/actions.ts` action) — rendered in
+  both sticky headers, only when a user is logged in. `/leaderboard` didn't fetch
+  the user before, so a `supabase.auth.getUser()` was added to its `Promise.all`
+  purely to decide whether to show the button.
+- **"View matches as guest" link on `/login`.** A subtle link under the sign-in
+  card pointing at `/matches`, so a first-time visitor can browse without an
+  account (both `/matches` and `/leaderboard` are already public/read-only via
+  RLS — they just can't place predictions until signed in).
 ## Post-v1 — `/matches`: "washi tape" match-day date headers (2026-06-14)
 
 Small visual tweak, owner request: make the sticky date headers on `/matches`

@@ -19,7 +19,7 @@ export function SubmitButton() {
     <button
       type="submit"
       disabled={pending}
-      className="w-full rounded-xl bg-[var(--green)] px-4 py-4 text-base font-semibold tracking-[-0.2px] text-white disabled:opacity-50"
+      className="w-full cursor-pointer rounded-xl bg-[var(--green)] px-4 py-4 text-base font-semibold tracking-[-0.2px] text-white transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:shadow-sm disabled:cursor-default disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
     >
       {pending ? "Sending..." : "Send magic link →"}
     </button>

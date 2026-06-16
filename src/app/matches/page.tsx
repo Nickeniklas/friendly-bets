@@ -1,8 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { SignOutButton } from "@/components/sign-out-button";
 import { BottomNav } from "@/components/bottom-nav";
 import { IntroCard } from "./intro-card";
-import { MatchCard, type ExistingBet } from "./match-card";
+import { MatchCard, type ExistingBet, type Distribution } from "./match-card";
 import { MatchesTabs } from "./matches-tabs";
 
 type Match = {
@@ -19,12 +20,13 @@ type Match = {
 type Bet = {
   match_id: string;
   pick: string;
-  stake: number;
-  payout: number | null;
   outcome: string | null;
+  points_awarded: number;
 };
 
-type Pool = { team1: number; team2: number };
+// Count of bets per outcome on a match, used for the crowd-split display and
+// the underdog-bonus hint (an outcome under 33% of bets earns the bonus).
+type PickCounts = { team1: number; draw: number; team2: number };
 
 // Maps the short stage codes stored in the DB (see SCHEMA.md / openfootball.ts
 // `mapStage`) to friendly labels. Falls back to the raw code for anything
@@ -92,33 +94,6 @@ function statusInfo(
   return { label: "Awaiting result", color: "muted" };
 }
 
-// Mirrors the payout math in `settle_match` (see
-// 20260609000000_initial_schema.sql) so the displayed numbers match what
-// would actually happen if the match settled right now:
-//   - pot = sum(all stakes), seeded up to 300 if the pool is thin (the house
-//     funds the gap, same as at settlement).
-//   - For a side with stake S, settle_match pays each winning bet
-//     `ROUND(stake / S * pot)` — i.e. every point on that side is multiplied
-//     by `pot / S`. That's the "implied multiplier" shown here.
-//   - A side with no stake (`null` multiplier) would be a push/refund if it
-//     won, so there's no multiplier to show.
-function computePool(stakes: Pool): {
-  pot: number;
-  mult1: number | null;
-  mult2: number | null;
-} {
-  const pot = Math.max(stakes.team1 + stakes.team2, 300);
-  return {
-    pot,
-    mult1: stakes.team1 > 0 ? pot / stakes.team1 : null,
-    mult2: stakes.team2 > 0 ? pot / stakes.team2 : null,
-  };
-}
-
-function formatMultiplier(mult: number | null): string {
-  return mult === null ? "—" : `${mult.toFixed(2)}x`;
-}
-
 type DayGroup = { day: string; matches: Match[] };
 
 // Groups matches by their kickoff date (formatted via formatDate),
@@ -155,14 +130,13 @@ export default async function MatchesPage() {
   } = await supabase.auth.getUser();
 
   // RLS allows everyone (including logged-out visitors) to read matches and
-  // bets, so this page — and the pool/multiplier info below — works without
-  // auth.
+  // bets, so this page — and the crowd-split display below — works without auth.
   const [{ data: matches, error }, { data: allBets }] = await Promise.all([
     supabase
       .from("matches")
       .select("id, team1, team2, kickoff_at, group_label, stage, status, result")
       .order("kickoff_at", { ascending: true }),
-    supabase.from("bets").select("match_id, pick, stake"),
+    supabase.from("bets").select("match_id, pick"),
   ]);
 
   if (error) {
@@ -173,16 +147,21 @@ export default async function MatchesPage() {
     );
   }
 
-  // Sum every bettor's stake per match/pick, for the pool/multiplier display.
-  const poolsByMatch = new Map<string, Pool>();
+  // Count every bet per match/outcome for the crowd-split display and the
+  // underdog-bonus hint (an outcome under 33% of bets earns the bonus).
+  const countsByMatch = new Map<string, PickCounts>();
   for (const bet of allBets ?? []) {
-    const pool = poolsByMatch.get(bet.match_id) ?? { team1: 0, team2: 0 };
-    pool[bet.pick as "team1" | "team2"] += bet.stake;
-    poolsByMatch.set(bet.match_id, pool);
+    const counts = countsByMatch.get(bet.match_id) ?? { team1: 0, draw: 0, team2: 0 };
+    const pick = bet.pick as keyof PickCounts;
+    if (pick === "team1" || pick === "draw" || pick === "team2") {
+      counts[pick] += 1;
+    }
+    countsByMatch.set(bet.match_id, counts);
   }
 
-  // For logged-in users, fetch their points balance and any bets they've
-  // already placed, so we can show "your bet" instead of a betting form.
+  // For logged-in users, fetch their points balance (shown in the header) and
+  // any bets they've already placed, so we can show "your prediction" instead
+  // of a betting form.
   let balance: number | null = null;
   const betsByMatch = new Map<string, Bet>();
 
@@ -195,7 +174,7 @@ export default async function MatchesPage() {
         .single(),
       supabase
         .from("bets")
-        .select("match_id, pick, stake, payout, outcome")
+        .select("match_id, pick, outcome, points_awarded")
         .eq("user_id", user.id),
     ]);
 
@@ -232,22 +211,25 @@ export default async function MatchesPage() {
   const liveGroups = groupByDay(liveMatches);
   const pastGroups = groupByDay(pastMatches);
 
-  // Renders a single match as a MatchCard, computing its pool/multiplier
-  // display and the visitor's existing bet (if any) along the way.
+  // Renders a single match as a MatchCard, computing its crowd-split
+  // distribution and the visitor's existing bet (if any) along the way.
   function renderMatchCard(match: Match) {
     const bettable =
       match.status === "scheduled" && new Date(match.kickoff_at).getTime() > now;
     const { label, color } = statusInfo(match, bettable);
-    const pool = poolsByMatch.get(match.id) ?? { team1: 0, team2: 0 };
-    const { pot, mult1, mult2 } = computePool(pool);
-    const poolInfo = `Pool ${pot} pts · ${match.team1} ${formatMultiplier(mult1)} · ${match.team2} ${formatMultiplier(mult2)}`;
+    const counts = countsByMatch.get(match.id) ?? { team1: 0, draw: 0, team2: 0 };
+    const distribution: Distribution = {
+      team1: counts.team1,
+      draw: counts.draw,
+      team2: counts.team2,
+      total: counts.team1 + counts.draw + counts.team2,
+    };
     const bet = betsByMatch.get(match.id);
     const existingBet: ExistingBet | undefined = bet
       ? {
-          pick: bet.pick as "team1" | "team2",
-          stake: bet.stake,
+          pick: bet.pick as ExistingBet["pick"],
           outcome: bet.outcome as ExistingBet["outcome"],
-          payout: bet.payout,
+          pointsAwarded: bet.points_awarded,
         }
       : undefined;
 
@@ -262,12 +244,11 @@ export default async function MatchesPage() {
         homeName={match.team1}
         awayName={match.team2}
         homeIsWinner={match.status === "settled" && match.result === "team1"}
+        drawIsWinner={match.status === "settled" && match.result === "draw"}
         awayIsWinner={match.status === "settled" && match.result === "team2"}
-        poolInfo={poolInfo}
-        multipliers={{ team1: mult1, team2: mult2 }}
+        distribution={distribution}
         bettable={bettable}
         loggedIn={!!user}
-        balance={balance}
         existingBet={existingBet}
       />
     );
@@ -323,6 +304,7 @@ export default async function MatchesPage() {
               </div>
             )}
             <ThemeToggle />
+            {user && <SignOutButton />}
           </div>
         </div>
       </div>
