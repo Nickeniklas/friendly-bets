@@ -124,6 +124,12 @@ start on these without being asked.
   submit) also got hover/active polish (lift + shadow, matching the
   match-card interaction) — `src/app/login/google-button.tsx` and
   `src/app/login/submit-button.tsx`.
+- Sign-out + guest access (2026-06-16) — the redesigned `/matches` and
+  `/leaderboard` headers now show a "Sign out" button when logged in
+  (`src/components/sign-out-button.tsx`, a `<form>` wrapping the existing
+  `signOut` action; `/leaderboard` gained a `getUser()` just to gate it). And
+  `/login` got a "View matches as guest" link (both list pages are already
+  public/read-only via RLS).
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.

@@ -742,3 +742,16 @@ Hiccups hit along the way (all expected, documented in `CLAUDE.md`):
 
 Docs updated across `CLAUDE.md`, `README.md`, `docs/PLAN.md`,
 `docs/PROJECT_CONTEXT.md`.
+
+Two small follow-ups in the same session:
+- **Sign-out in the redesigned headers.** The redesigned `/matches` and
+  `/leaderboard` had no way to sign out (only the plain `/` home page did). Added
+  a reusable `src/components/sign-out-button.tsx` — a Server Component wrapping
+  `<form action={signOut}>` (the existing `auth/actions.ts` action) — rendered in
+  both sticky headers, only when a user is logged in. `/leaderboard` didn't fetch
+  the user before, so a `supabase.auth.getUser()` was added to its `Promise.all`
+  purely to decide whether to show the button.
+- **"View matches as guest" link on `/login`.** A subtle link under the sign-in
+  card pointing at `/matches`, so a first-time visitor can browse without an
+  account (both `/matches` and `/leaderboard` are already public/read-only via
+  RLS — they just can't place predictions until signed in).

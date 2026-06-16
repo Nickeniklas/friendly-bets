@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { signInWithMagicLink } from "./actions";
 import { SubmitButton } from "./submit-button";
 import { GoogleButton } from "./google-button";
@@ -89,6 +90,16 @@ export default async function LoginPage({
             </div>
           </div>
         </div>
+
+        {/* Let people browse the app without an account — /matches and
+            /leaderboard are public (read-only without login). They can sign in
+            later when they want to predict. */}
+        <Link
+          href="/matches"
+          className="mt-4 block text-center text-sm font-semibold text-[var(--muted)] underline-offset-4 hover:text-[var(--foreground)] hover:underline"
+        >
+          View matches as guest →
+        </Link>
       </div>
 
       <ThemeTogglePill />

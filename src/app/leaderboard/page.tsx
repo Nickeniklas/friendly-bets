@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { SignOutButton } from "@/components/sign-out-button";
 import { BottomNav } from "@/components/bottom-nav";
 import { LeaderboardTable, type LeaderboardRow } from "@/components/leaderboard-table";
 
@@ -135,9 +136,14 @@ export default async function LeaderboardPage() {
   const supabase = await createClient();
 
   const [
+    {
+      data: { user },
+    },
     { data: points, error: pointsError },
     { data: accuracy, error: accuracyError },
   ] = await Promise.all([
+    // Only used to decide whether to show the header's "Sign out" button.
+    supabase.auth.getUser(),
     supabase
       .from("profiles")
       .select("id, display_name, points_balance")
@@ -192,7 +198,10 @@ export default async function LeaderboardPage() {
             <span>⚽</span>
             <span>Friendly Bets</span>
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            {user && <SignOutButton />}
+          </div>
         </div>
       </div>
 

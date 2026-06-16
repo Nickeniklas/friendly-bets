@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { SignOutButton } from "@/components/sign-out-button";
 import { BottomNav } from "@/components/bottom-nav";
 import { IntroCard } from "./intro-card";
 import { MatchCard, type ExistingBet, type Distribution } from "./match-card";
@@ -303,6 +304,7 @@ export default async function MatchesPage() {
               </div>
             )}
             <ThemeToggle />
+            {user && <SignOutButton />}
           </div>
         </div>
       </div>
