@@ -160,10 +160,11 @@ tabs, each showing a match count:
 - **Past** — settled. Most recent result first.
 
 Within each tab, matches are grouped under a sticky date header per kickoff
-day. Kickoff times are shown in Finnish time (`Europe/Helsinki`, handles the
-EET/EEST daylight-saving switch automatically) — `kickoff_at` itself is still
-stored in UTC. A tab with no matches shows a short message (e.g. "No live
-matches right now") instead of a blank area.
+day, styled as a bold green "washi tape" banner (clipped/angled corners) with
+the date and that day's match count. Kickoff times are shown in Finnish time
+(`Europe/Helsinki`, handles the EET/EEST daylight-saving switch automatically)
+— `kickoff_at` itself is still stored in UTC. A tab with no matches shows a
+short message (e.g. "No live matches right now") instead of a blank area.
 
 ### Place a prediction
 

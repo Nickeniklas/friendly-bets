@@ -99,6 +99,26 @@ Post-v1 polish:
   plus `groupByDay()`/`renderMatchCard()`/`renderDayGroups()` helpers in
   `src/app/matches/page.tsx`. Commit `f75ddf8`. See `docs/HISTORY.md` for
   details.
+- `/matches`' sticky date headers are now a "washi tape" style banner —
+  bold green strip with the date + match count and clipped/angled corners
+  (`clipPath: polygon(...)` in `renderDayGroups()`,
+  `src/app/matches/page.tsx`). Commit `9d9b4bd`.
+- Match cards on `/matches` (`match-card.tsx`) got three polish items: a
+  "Bets open" hint bar (shown on any bettable match with no bet yet and no
+  team picked, even before a team is tapped — copy/CTA varies by login
+  state), whole-card + team-button hover effects (`shadow-md`, team buttons
+  also lift via `-translate-y-0.5`), and a "nudge" animation (450ms bounce +
+  green ring on both team buttons, via `@keyframes nudge` in `globals.css`)
+  when tapping anywhere else on a bettable card before picking a team. Commit
+  `290bcc0`.
+- Placing a bet on `/matches` no longer causes a full page navigation/scroll-
+  to-top. `placeBet` (`src/app/matches/actions.ts`) returns a
+  `PlaceBetResult` instead of `redirect()`ing; `match-card.tsx` calls it
+  directly from a click handler, shows the result as a self-dismissing toast
+  fixed above the bottom nav, and on success calls `router.refresh()` to
+  re-fetch balance/pool/bet state in place. `place-bet-button.tsx` was
+  deleted (its `useFormStatus` pattern no longer applies — see Gotchas).
+  Commit `f731c44`.
 
 All three pages from the Claude Design bundle (`Matches.dc.html`,
 `Leaderboard.dc.html`, `Login.dc.html`) are now implemented and visually
