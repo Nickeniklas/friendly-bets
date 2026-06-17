@@ -16,12 +16,27 @@ import { createClient } from "@/lib/supabase/server";
  * alternative setup where the email templates are customized (requires
  * custom SMTP) to link directly here with a token hash instead.
  */
+/**
+ * Only allow redirecting to an in-app path. `next` is attacker-controllable
+ * (it rides in the link's query string), and `${origin}${next}` would happily
+ * resolve off-site for values like `@evil.com` (parsed as userinfo) or
+ * `\\evil.com`. Require a single leading slash and reject `//`/`/\` (which
+ * browsers treat as protocol-relative absolute URLs), so the redirect target
+ * can only ever be a path on our own origin.
+ */
+function safeNext(raw: string | null): string {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) {
+    return "/";
+  }
+  return raw;
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   const token_hash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
-  const next = searchParams.get("next") ?? "/";
+  const next = safeNext(searchParams.get("next"));
 
   const supabase = await createClient();
 

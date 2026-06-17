@@ -179,6 +179,28 @@ start on these without being asked.
   settled bets show `0 pts` in the Past tab — stale but harmless. Not cleaned
   up (no DB migration written); revisit only if those zero rows are confusing
   in practice.
+- Code-review fix batch (2026-06-17) — a full-codebase `/code-review` pass found
+  and fixed one security bug + several correctness/cleanup items (full detail in
+  `docs/HISTORY.md`):
+  - **Security:** `claim_daily_bonus()` was still GRANTed to clients, so a
+    logged-in user could self-award points via direct RPC. Revoked from
+    `authenticated`/`anon`/`PUBLIC` in
+    `20260617000000_disable_daily_bonus_grant.sql` (see the daily-bonus notes
+    above and in the invariants section).
+  - `src/lib/openfootball.ts` `parseKickoffAt` now `console.warn`s on a
+    missing/unparseable/offset-less time instead of silently assuming UTC.
+  - `/api/sync` settle loop no longer aborts the whole batch on one failure
+    (logs + `failed[]`, continues), and now freezes the `result` of
+    already-settled matches before upserting so a feed correction can't desync
+    awarded points from the stored result.
+  - `/auth/confirm` validates `next` via `safeNext()` (must start with a single
+    `/`) to close an open-redirect.
+  - New `match_bet_counts` view (`20260617010000_match_bet_counts_view.sql`)
+    aggregates the crowd-split in Postgres; `/matches` queries it instead of
+    fetching the whole `bets` table. **`/matches` now depends on this view —
+    the migration must be applied or the page errors.**
+  - Shared header extracted to `src/components/app-header.tsx` (`AppHeader`,
+    used by `/matches` + `/leaderboard`).
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.
