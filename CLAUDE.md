@@ -150,6 +150,28 @@ start on these without being asked.
   `signOut` action; `/leaderboard` gained a `getUser()` just to gate it). And
   `/login` got a "View matches as guest" link (both list pages are already
   public/read-only via RLS).
+- Terminology + stale-label cleanup (2026-06-17) — leftover "bet"-era copy
+  from the staking model was renamed to prediction wording on `/matches`:
+  "Bets open" → "Predictions open", "Log in to bet" → "Log in to predict"
+  (`src/app/matches/match-card.tsx`), and in `src/app/matches/actions.ts` the
+  user-facing strings "Bet placed!" → "Prediction saved!", "Invalid bet" →
+  "Invalid prediction", "Betting is closed for this match." → "Predictions
+  are closed for this match.", "You've already placed a bet on this match." →
+  "You've already predicted this match." The `message.includes("betting is
+  closed")` / `"duplicate key value"` checks were left as-is (they match the
+  raw DB trigger/constraint error text, not user copy). The "Friendly Bets"
+  app name and the leaderboard "Bets" count column were kept. Also removed the
+  dead `Refunded` branch from `ResultRow` (`match-card.tsx`): under the points
+  model a settled prediction is only ever `won`/`lost` (a draw you didn't pick
+  is just a loss — there is no refund anymore; the V2 migration deleted all
+  push/refund logic). `refunded` is a dormant legacy outcome value; if any
+  pre-V2 bet row still carries it, it now renders as a loss line rather than
+  referencing the retired refund concept. **Note on legacy rows:** the V2
+  migration added `bets.points_awarded` with `DEFAULT 0` and did NOT re-settle
+  matches already settled under V1 (settlement is idempotent), so pre-V2
+  settled bets show `0 pts` in the Past tab — stale but harmless. Not cleaned
+  up (no DB migration written); revisit only if those zero rows are confusing
+  in practice.
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.

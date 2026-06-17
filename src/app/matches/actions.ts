@@ -38,7 +38,7 @@ export async function placeBet(formData: FormData): Promise<PlaceBetResult> {
   }
 
   if (!VALID_PICKS.includes(pick as (typeof VALID_PICKS)[number])) {
-    return { status: "error", message: "Invalid bet" };
+    return { status: "error", message: "Invalid prediction" };
   }
 
   const { error } = await supabase.from("bets").insert({
@@ -51,15 +51,19 @@ export async function placeBet(formData: FormData): Promise<PlaceBetResult> {
     return { status: "error", message: friendlyBetError(error.message) };
   }
 
-  return { status: "success", message: "Bet placed!" };
+  return { status: "success", message: "Prediction saved!" };
 }
 
+// Note: the `message.includes(...)` checks below match the raw error text from
+// the DB (the enforce_bet_window trigger and the UNIQUE constraint) — those are
+// internal and unchanged. Only the user-facing strings we return use the
+// prediction wording.
 function friendlyBetError(message: string): string {
   if (message.includes("betting is closed")) {
-    return "Betting is closed for this match.";
+    return "Predictions are closed for this match.";
   }
   if (message.includes("duplicate key value")) {
-    return "You've already placed a bet on this match.";
+    return "You've already predicted this match.";
   }
   return message;
 }

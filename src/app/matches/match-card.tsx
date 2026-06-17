@@ -167,18 +167,18 @@ export function MatchCard({
         </div>
       )}
 
-      {/* "Bets open" hint — shown until an outcome is picked, so the card itself
-          explains that betting is available even if someone skipped the "How to
-          play" card. */}
+      {/* "Predictions open" hint — shown until an outcome is picked, so the card
+          itself explains that predicting is available even if someone skipped
+          the "How to play" card. */}
       {bettable && !existingBet && selected === null && (
         <div className="mt-3 flex items-center justify-between gap-2 border-t border-[var(--line)] pt-3">
           <div className="flex items-center gap-1.5 text-[13px] font-medium text-[var(--green-text)]">
             <span className="inline-block h-2 w-2 rounded-full bg-[var(--green)]" />
-            <span>Bets open{loggedIn ? " — tap an outcome to predict" : ""}</span>
+            <span>Predictions open{loggedIn ? " — tap an outcome to predict" : ""}</span>
           </div>
           {!loggedIn && (
             <Link href="/login" className="shrink-0 text-xs underline text-[var(--muted)]">
-              Log in to bet
+              Log in to predict
             </Link>
           )}
         </div>
@@ -306,20 +306,19 @@ function ResultRow({ existingBet, pickName }: { existingBet: ExistingBet; pickNa
   let color: string;
   let label: string;
 
+  // Under the accuracy/points model a settled prediction is only ever 'won' or
+  // 'lost' (a draw you didn't pick is just a loss — there's no refund anymore).
+  // 'refunded' is a dead legacy value from the old staking model; on the off
+  // chance a historical row still carries it, we render it as a loss rather
+  // than referencing the retired refund concept.
   if (existingBet.outcome === "won") {
     icon = "✓";
     color = "var(--green-text)";
     label = `Correct! +${existingBet.pointsAwarded} pts — you predicted ${pickName}`;
-  } else if (existingBet.outcome === "lost") {
+  } else {
     icon = "✗";
     color = "var(--red)";
     label = `Wrong — ${existingBet.pointsAwarded} pts — you predicted ${pickName}`;
-  } else {
-    // Legacy refunded bets from the old staking model — should not occur for
-    // new bets, but render gracefully if any historical rows remain.
-    icon = "↩";
-    color = "var(--gold)";
-    label = `Refunded — your prediction was ${pickName}`;
   }
 
   return (

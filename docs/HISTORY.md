@@ -894,3 +894,46 @@ confirmation."`.
 ### Next up
 No further `/matches` work planned — anything else is a v2 idea (see
 `docs/PLAN.md` "v2 ideas").
+
+## Post-v1 — V2 terminology cleanup + dead refund branch (2026-06-17)
+
+Owner feedback after the V2 launch (parimutuel → fixed-points): the Past tab
+still showed labels "in the old sense" of betting, and a question about
+whether draws should count as losses or still get "refunded".
+
+### Findings (no scoring change needed)
+- Draws already count as losses. The V2 migration
+  (`supabase/migrations/20260616000000_accuracy_points_model.sql`) deleted all
+  push/refund-on-draw logic; `settle_match` only ever writes `won`/`lost`.
+  Picking home/away on a drawn match is a wrong pick (−5); a correct `draw`
+  pick wins (+10/+15). So no change was required to "make ties losses" — it
+  was already the behavior.
+- The `0 pts` vs `−5 pts` confusion in the Past tab was a red herring: the
+  owner had been reading the list upside down. Underlying explanation kept for
+  reference: `bets.points_awarded` was added in the V2 migration with
+  `DEFAULT 0`, and pre-V2 matches were never re-settled (settlement is
+  idempotent), so old bets legitimately read `0 pts`. Not cleaned up.
+
+### Changes made
+- Renamed leftover "bet"-era user-facing copy to prediction wording:
+  - `src/app/matches/match-card.tsx`: "Bets open" → "Predictions open",
+    "Log in to bet" → "Log in to predict" (+ the matching code comment).
+  - `src/app/matches/actions.ts`: "Bet placed!" → "Prediction saved!",
+    "Invalid bet" → "Invalid prediction", "Betting is closed for this match."
+    → "Predictions are closed for this match.", "You've already placed a bet
+    on this match." → "You've already predicted this match." Left the
+    `message.includes("betting is closed")` / `"duplicate key value"` matchers
+    untouched (they key off raw DB error text, not user copy).
+  - Kept the "Friendly Bets" app name and the leaderboard "Bets" count column.
+- Removed the dead `Refunded` branch in `ResultRow` (`match-card.tsx`). A
+  settled prediction is now only Correct/Wrong; a stray legacy `refunded` row
+  renders as a loss line instead of resurrecting the retired refund concept.
+
+A read-only diagnostic of the live `bets` table was attempted to confirm the
+0/−5 split but was (correctly) blocked as an unapproved production read; the
+owner then clarified it was just a misread, so no query was run.
+
+Verified: `npx tsc --noEmit` clean.
+
+### Next up
+Owner is closing this session for a clean slate. No open work.

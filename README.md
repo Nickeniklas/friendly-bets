@@ -178,8 +178,11 @@ Submitting inserts a row into `bets`; the `enforce_bet_window` trigger (from
 window and the `UNIQUE (user_id, match_id)` constraint blocks a second pick on
 the same match. Once you've predicted a match, the card shows a read-only
 "Predicted — Outcome" row instead of the panel (no editing), and the result
-(Correct +N / Wrong −5) once `settle_match` runs. Scoring lives in the
-rewritten `settle_match` RPC (`20260616000000_accuracy_points_model.sql`).
+(Correct +N / Wrong −5) once `settle_match` runs. A settled prediction is only
+ever Correct or Wrong — there's no refund, so picking home/away on a match that
+ends in a draw is just a wrong pick (−5); only a correct `draw` pick wins.
+Scoring lives in the rewritten `settle_match` RPC
+(`20260616000000_accuracy_points_model.sql`).
 
 ### Leaderboard
 
