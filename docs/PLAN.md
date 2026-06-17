@@ -76,105 +76,17 @@ openfootball JSON ──(sync job, every 5 min)──> Supabase: matches table
         │                                flip match.status -> settled (idempotent: skip if already)
 ```
 
-## Build order (bottom-up)
+## Status
 
-Status detail lives in `CLAUDE.md` ("Status" section) — kept current there so it
-doesn't drift across two files. The full step-by-step build log (incl. bugs found
-and fixed) is in `docs/HISTORY.md`.
+**v1 is complete and live.** All of the original build order (Supabase schema/RLS/RPC,
+the `/api/sync` sync+settle job, magic-link + Google auth, `/matches`, the place-pick
+flow, `settle_match`, `/leaderboard` + accuracy view, and the crowd-split polish) is
+done, along with subsequent post-v1 polish (UI redesign, Finnish times, Upcoming/Live/
+Past tabs, the parimutuel→fixed-points model change, and more).
 
-1. DONE — Supabase project + schema (tables, RPC, views, RLS). See `SCHEMA.md`.
-2. DONE — openfootball sync — a protected API route (`/api/sync`) that pulls JSON, upserts into
-   `matches`, then auto-settles any match with a result, kickoff >3h ago, not yet settled.
-   Deployed to Vercel and triggered by an external scheduler (cron-job.org, free) every
-   5 minutes (originally every 2–3h, reduced 2026-06-14), NOT Vercel cron (Hobby is
-   once-daily only). Route checks a shared secret so only the scheduler can run it.
-3. DONE — Next.js skeleton + Supabase client helpers + magic-link auth (`/login`,
-   `/auth/confirm`, session-refresh middleware, sign-out). Works with Supabase's
-   default email template (no custom SMTP needed) via PKCE `code` exchange.
-   Supabase Authentication -> URL Configuration is set up. Remaining: add
-   `NEXT_PUBLIC_SITE_URL` to Vercel project env vars (see CLAUDE.md).
-4. DONE — Match list page (read matches). `src/app/matches/page.tsx`, grouped
-   by kickoff date, linked from the home page.
-5. DONE — Place-pick flow (insert bet, guarded by match status). `src/app/matches/page.tsx`
-   shows a three-way pick (home/draw/away) per bettable match;
-   `src/app/matches/actions.ts` (`placeBet`) just inserts into `bets` — the
-   `enforce_bet_window` trigger + UNIQUE constraint do all enforcement.
-6. DONE — Settlement RPC (built as part of step 1; called by the sync job in step 2; idempotent).
-   Rewritten 2026-06-16 for the fixed-points model.
-7. DONE — Leaderboard (points) + accuracy stats view. `src/app/leaderboard/page.tsx`,
-   linked from the home page and `/matches`.
-8. DONE — Polish: show the crowd split (% of picks per outcome) on each match.
-   `src/app/matches/page.tsx` fetches all bets' `match_id, pick` alongside the
-   matches query (RLS allows anon read), counts picks per match/outcome, and
-   shows "X% Home · Y% Draw · Z% Away" on each card — which also surfaces the
-   underdog-bonus mechanic (any outcome under 33%).
+This file is now reference-only — the design rationale above doesn't change. For
+current state see `CLAUDE.md` ("Status"); for the full step-by-step build log
+(including every feature, bug found/fixed, and why decisions were made), see
+`docs/HISTORY.md`.
 
-## Post-v1 polish (done)
-- Spam/trash folder reminder on `/login` (2026-06-13) — Brevo's sending address has
-  no domain reputation yet, so first-time magic-link emails often land in spam. See
-  `docs/HISTORY.md` and `CLAUDE.md` ("Email / SMTP").
-- Team flags on `/matches` (2026-06-13) — small flag next to each team name, via
-  flag-icons SVGs in `public/flags/`. See `docs/HISTORY.md` and README ("Team flags").
-- Daily login bonus with streak multiplier (2026-06-13) — **disabled 2026-06-16**
-  (it inflated the prediction score under the fixed-points model). Awarded 100-400
-  points on first page load each UTC day based on a login streak. App wiring removed;
-  `claim_daily_bonus()` RPC + `profiles` streak columns remain dormant. See
-  `docs/HISTORY.md` and README ("Daily login bonus (disabled)").
-- `/matches` mobile-first redesign + app-wide dark/light toggle (2026-06-13,
-  commit `02cd971`) — implemented from a Claude Design mockup
-  (`Matches.dc.html`): sticky header, "How to play" card, tap-to-pick flow,
-  bottom tab bar, and a manual dark/light theme applied across the whole app.
-  (The original quick-pick stake chips were removed on 2026-06-16 with the
-  fixed-points model change.) See `docs/HISTORY.md`, `CLAUDE.md` ("Theme:
-  dark/light toggle"), and README ("Place a prediction", "Theme").
-- `/leaderboard` redesign (2026-06-14, commit `4ad4e9a`) — implemented from
-  the same bundle's `Leaderboard.dc.html`: gold/silver/bronze podium for the
-  top 3, ranked list for the rest, accuracy table. See `docs/HISTORY.md` and
-  README ("Leaderboard"). The ranked list + accuracy table were later
-  replaced — see below.
-- `/login` redesign (2026-06-14, commit `117e670`) — implemented from the
-  same bundle's `Login.dc.html`: centered logo, "Sign in" card with magic-link
-  button, "Heads up" warnings card, labeled theme-toggle pill. See
-  `docs/HISTORY.md` and README ("Theme").
-
-All three pages from the Claude Design bundle are now implemented — no
-further UI redesign work planned.
-
-- `/matches` Finnish kickoff times + Upcoming/Live/Past tabs (2026-06-14,
-  commits `d92506a`/`f75ddf8`) — kickoff times now show in Finnish time
-  (`Europe/Helsinki`) instead of UTC, and the match list is split into
-  Upcoming/Live/Past tabs with date-grouped sticky headers, per-tab counts,
-  and empty states. See `docs/HISTORY.md` and README ("Match list"). This was
-  added after the redesign bundle above, so it's not part of those three
-  pages' visual redesign.
-- `/leaderboard`: podium + one sortable all-players table (2026-06-14,
-  commit `7407268`) — replaced the ranked list (4th+) and separate accuracy
-  table with a single table covering every player (rank, player, points,
-  bets, correct, wrong, win rate %, streak), sortable client-side by any of
-  the six numeric columns (click a header to sort, click again to toggle
-  direction; default points descending). The points podium (top 3) is
-  unchanged. See `docs/HISTORY.md` and README ("Leaderboard").
-- `/api/sync` cron interval reduced from every 2-3h to every 5 minutes
-  (2026-06-14, cron-job.org config change, no code) — settlement now fires
-  within ~5 minutes of a match crossing the 3h-post-kickoff threshold instead
-  of up to ~3h late. See `docs/HISTORY.md`.
-- Renamed `src/middleware.ts` → `src/proxy.ts` (2026-06-14, commit `4cb951a`)
-  — Next.js 16 renamed this file convention; `config.matcher` unchanged, no
-  behavior change. See `docs/HISTORY.md`.
-- Google OAuth sign-in added to `/login` (2026-06-16, `version2.0` branch) —
-  additive alongside magic-link auth, sharing the same `/auth/confirm` PKCE
-  return route; magic-link flow unchanged. Login buttons also got hover/active
-  polish. See `docs/HISTORY.md` and README ("Auth").
-
-## Open items
-- Scoring is decided: correct +10, underdog (<33% of picks) bonus +5, wrong −5;
-  balances start at 0 and may go negative. (Settled.)
-- Settlement is automatic: the sync job (every 5 minutes) settles any match with a result,
-  kickoff >3h ago, not yet settled. Idempotent — already-settled matches are skipped.
-  (Settled.)
-- Draw handling is decided: draw is a first-class pickable outcome (one of
-  team1/draw/team2), scored exactly like any other correct/wrong pick. No push/refund.
-  (Settled — promoted from a v2 idea on 2026-06-16.)
-
-## v2 ideas (not now)
-- (none currently)
+There are no open v2 ideas at the moment.
