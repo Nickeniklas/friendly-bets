@@ -1,6 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { SignOutButton } from "@/components/sign-out-button";
+import { AppHeader } from "@/components/app-header";
 import { BottomNav } from "@/components/bottom-nav";
 import { IntroCard } from "./intro-card";
 import { MatchCard, type ExistingBet, type Distribution } from "./match-card";
@@ -130,13 +129,16 @@ export default async function MatchesPage() {
   } = await supabase.auth.getUser();
 
   // RLS allows everyone (including logged-out visitors) to read matches and
-  // bets, so this page — and the crowd-split display below — works without auth.
-  const [{ data: matches, error }, { data: allBets }] = await Promise.all([
+  // bets, so this page — and the crowd-split display below — works without
+  // auth. The per-outcome bet counts come pre-aggregated from the
+  // `match_bet_counts` view (one small row per match) rather than fetching and
+  // tallying the whole bets table in JS.
+  const [{ data: matches, error }, { data: betCounts }] = await Promise.all([
     supabase
       .from("matches")
       .select("id, team1, team2, kickoff_at, group_label, stage, status, result")
       .order("kickoff_at", { ascending: true }),
-    supabase.from("bets").select("match_id, pick"),
+    supabase.from("match_bet_counts").select("match_id, team1, draw, team2"),
   ]);
 
   if (error) {
@@ -147,16 +149,16 @@ export default async function MatchesPage() {
     );
   }
 
-  // Count every bet per match/outcome for the crowd-split display and the
+  // Index the crowd-split counts by match id for the display and the
   // underdog-bonus hint (an outcome under 33% of bets earns the bonus).
+  // Matches with no bets are absent from the view and default to zeros below.
   const countsByMatch = new Map<string, PickCounts>();
-  for (const bet of allBets ?? []) {
-    const counts = countsByMatch.get(bet.match_id) ?? { team1: 0, draw: 0, team2: 0 };
-    const pick = bet.pick as keyof PickCounts;
-    if (pick === "team1" || pick === "draw" || pick === "team2") {
-      counts[pick] += 1;
-    }
-    countsByMatch.set(bet.match_id, counts);
+  for (const row of betCounts ?? []) {
+    countsByMatch.set(row.match_id, {
+      team1: row.team1,
+      draw: row.draw,
+      team2: row.team2,
+    });
   }
 
   // For logged-in users, fetch their points balance (shown in the header) and
@@ -290,24 +292,14 @@ export default async function MatchesPage() {
 
   return (
     <div className="min-h-screen pb-[72px]">
-      {/* Sticky header */}
-      <div className="sticky top-0 z-50 border-b border-[var(--line)] bg-[var(--background)]">
-        <div className="mx-auto flex h-14 max-w-[600px] items-center justify-between px-4">
-          <div className="flex items-center gap-2 text-base font-bold">
-            <span>⚽</span>
-            <span>Friendly Bets</span>
+      {/* Sticky header — points pill is the matches-specific right-side slot */}
+      <AppHeader loggedIn={!!user}>
+        {user && (
+          <div className="rounded-full bg-[var(--green-bg)] px-3 py-[5px] text-[13px] font-semibold text-[var(--green-text)]">
+            {(balance ?? 0).toLocaleString()} pts
           </div>
-          <div className="flex items-center gap-2">
-            {user && (
-              <div className="rounded-full bg-[var(--green-bg)] px-3 py-[5px] text-[13px] font-semibold text-[var(--green-text)]">
-                {(balance ?? 0).toLocaleString()} pts
-              </div>
-            )}
-            <ThemeToggle />
-            {user && <SignOutButton />}
-          </div>
-        </div>
-      </div>
+        )}
+      </AppHeader>
 
       {/* Content */}
       <div className="mx-auto max-w-[600px] px-4 pt-4 pb-2">

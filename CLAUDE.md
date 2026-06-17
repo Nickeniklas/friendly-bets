@@ -42,10 +42,17 @@ Post-v1 polish:
   scoring model it just inflated the prediction score, so all wiring was
   removed: `<DailyBonusToast />` unmounted from the layout, and the
   `claimDailyBonus()` action + `DailyBonusToast` component deleted. The DB
-  objects are left dormant (never called): the `claim_daily_bonus()` RPC and
-  the `profiles.last_bonus_date` / `streak_count` columns from migration
-  `20260613000000_daily_bonus.sql` still exist but nothing invokes them. To
-  re-enable later, restore the toast/action wiring. See `docs/HISTORY.md`.
+  objects are left dormant (never called by app code): the
+  `claim_daily_bonus()` RPC and the `profiles.last_bonus_date` /
+  `streak_count` columns from migration `20260613000000_daily_bonus.sql` still
+  exist. **2026-06-17 — grant revoked:** migration
+  `20260617000000_disable_daily_bonus_grant.sql` REVOKEs EXECUTE on the RPC
+  from `authenticated`/`anon`/`PUBLIC`. Until then the RPC was still GRANTed to
+  `authenticated`, so a logged-in client could call
+  `supabase.rpc('claim_daily_bonus')` directly and self-award 100-400 pts/day,
+  violating the "only settle_match changes balances" invariant. The function +
+  columns are kept (not dropped) so the feature can be re-enabled later by
+  restoring the grant **and** the toast/action wiring. See `docs/HISTORY.md`.
 - `/matches` got a mobile-first visual redesign (commit `02cd971`, merged to
   `main` 2026-06-13), implemented from a Claude Design mockup
   (`Matches.dc.html`): sticky header with a points pill + dark/light toggle, a
@@ -172,6 +179,28 @@ start on these without being asked.
   settled bets show `0 pts` in the Past tab — stale but harmless. Not cleaned
   up (no DB migration written); revisit only if those zero rows are confusing
   in practice.
+- Code-review fix batch (2026-06-17) — a full-codebase `/code-review` pass found
+  and fixed one security bug + several correctness/cleanup items (full detail in
+  `docs/HISTORY.md`):
+  - **Security:** `claim_daily_bonus()` was still GRANTed to clients, so a
+    logged-in user could self-award points via direct RPC. Revoked from
+    `authenticated`/`anon`/`PUBLIC` in
+    `20260617000000_disable_daily_bonus_grant.sql` (see the daily-bonus notes
+    above and in the invariants section).
+  - `src/lib/openfootball.ts` `parseKickoffAt` now `console.warn`s on a
+    missing/unparseable/offset-less time instead of silently assuming UTC.
+  - `/api/sync` settle loop no longer aborts the whole batch on one failure
+    (logs + `failed[]`, continues), and now freezes the `result` of
+    already-settled matches before upserting so a feed correction can't desync
+    awarded points from the stored result.
+  - `/auth/confirm` validates `next` via `safeNext()` (must start with a single
+    `/`) to close an open-redirect.
+  - New `match_bet_counts` view (`20260617010000_match_bet_counts_view.sql`)
+    aggregates the crowd-split in Postgres; `/matches` queries it instead of
+    fetching the whole `bets` table. **`/matches` now depends on this view —
+    the migration must be applied or the page errors.**
+  - Shared header extracted to `src/components/app-header.tsx` (`AppHeader`,
+    used by `/matches` + `/leaderboard`).
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.
@@ -344,8 +373,10 @@ tricks. Explain non-obvious Next.js / Supabase choices inline.
   down with RLS; the settlement RPC is security-definer.
 - Daily login bonus (`claim_daily_bonus`) — **DISABLED 2026-06-16.** All app wiring was
   removed; the RPC + `profiles.last_bonus_date`/`streak_count` columns remain in the DB but
-  dormant (nothing calls them). It inflated the prediction score under the new model. See
-  the Status note above and `docs/HISTORY.md`.
+  dormant (nothing calls them). It inflated the prediction score under the new model. Its
+  EXECUTE grant was revoked from all client roles on 2026-06-17
+  (`20260617000000_disable_daily_bonus_grant.sql`) so it can't be invoked directly either —
+  see the Status note above and `docs/HISTORY.md`.
 
 ## Build order
 All steps DONE — see `docs/PLAN.md` for the full table and `docs/HISTORY.md` for the

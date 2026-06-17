@@ -115,19 +115,47 @@ export function mapStage(round: string): string {
  * timestamp. If `time` is missing or doesn't include a UTC offset, it's
  * treated as UTC — close enough for a friendly game where being off by an
  * hour or two doesn't change anything except exactly when betting closes.
+ *
+ * That "treated as UTC" fallback is the one real risk: WC2026 venues span
+ * UTC-4…UTC-7, so an offset-less time stored as UTC is several hours off,
+ * which shifts exactly when predictions close (the enforce_bet_window trigger
+ * keys off kickoff_at). We can't recover the true offset without per-venue
+ * timezone data, but we no longer fail *silently*: each fallback logs a warning
+ * (visible in the /api/sync server logs) so a feed that drops offsets is
+ * noticed rather than quietly producing wrong kickoff times. The regex also
+ * only understands whole-hour offsets ("UTC-6"), which is all WC2026 host
+ * cities use; a fractional or oddly-formatted offset falls through to the
+ * same warned UTC fallback.
  */
 export function parseKickoffAt(date: string, time?: string): string {
   const base = new Date(`${date}T00:00:00Z`);
 
-  if (!time) return base.toISOString();
+  if (!time) {
+    console.warn(
+      `[openfootball] match on ${date} has no kickoff time; defaulting to 00:00 UTC`
+    );
+    return base.toISOString();
+  }
 
   const match = time.match(/^(\d{1,2}):(\d{2})(?:\s*UTC([+-]\d+))?/);
-  if (!match) return base.toISOString();
+  if (!match) {
+    console.warn(
+      `[openfootball] unparseable kickoff time "${time}" on ${date}; defaulting to 00:00 UTC`
+    );
+    return base.toISOString();
+  }
 
   const [, hourStr, minuteStr, offsetStr] = match;
   const hour = Number(hourStr);
   const minute = Number(minuteStr);
   const offsetHours = offsetStr ? Number(offsetStr) : 0;
+
+  if (!offsetStr) {
+    console.warn(
+      `[openfootball] kickoff time "${time}" on ${date} has no UTC offset; ` +
+        `assuming UTC — predictions may close at the wrong time for non-UTC venues`
+    );
+  }
 
   // "13:00 UTC-6" means local time is 6 hours behind UTC, so
   // UTC time = local time - offset = 13:00 - (-6) = 19:00.

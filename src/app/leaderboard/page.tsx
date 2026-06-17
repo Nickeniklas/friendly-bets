@@ -1,6 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { SignOutButton } from "@/components/sign-out-button";
+import { AppHeader } from "@/components/app-header";
 import { BottomNav } from "@/components/bottom-nav";
 import { LeaderboardTable, type LeaderboardRow } from "@/components/leaderboard-table";
 
@@ -191,19 +190,8 @@ export default async function LeaderboardPage() {
 
   return (
     <div className="min-h-screen pb-[72px]">
-      {/* Sticky header */}
-      <div className="sticky top-0 z-50 border-b border-[var(--line)] bg-[var(--background)]">
-        <div className="mx-auto flex h-14 max-w-[600px] items-center justify-between px-4">
-          <div className="flex items-center gap-2 text-base font-bold">
-            <span>⚽</span>
-            <span>Friendly Bets</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
-            {user && <SignOutButton />}
-          </div>
-        </div>
-      </div>
+      {/* Sticky header (no points pill on the leaderboard) */}
+      <AppHeader loggedIn={!!user} />
 
       {/* Content */}
       <div className="mx-auto max-w-[600px] px-4 pt-5 pb-4">

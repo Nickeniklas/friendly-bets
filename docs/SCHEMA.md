@@ -154,7 +154,9 @@ anymore.
 
 ## RLS (Supabase)
 - `profiles`: a user reads all (leaderboard) but updates none directly — balance only
-  changes via the settlement RPC and the daily-bonus RPC.
+  changes via the settlement RPC (`settle_match`). The daily-bonus RPC could once change
+  it too, but its EXECUTE grant was revoked on 2026-06-17, so `settle_match` is now the
+  only path that touches a balance.
 - `bets`: a user inserts only their own (and only on a bettable match); reads all
   (so the crowd split is visible).
 - `matches`: read for all; writes only by the sync job / admin (service role).

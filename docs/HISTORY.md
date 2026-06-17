@@ -937,3 +937,76 @@ Verified: `npx tsc --noEmit` clean.
 
 ### Next up
 Owner is closing this session for a clean slate. No open work.
+
+## Post-v1 — code-review fix batch (2026-06-17)
+
+A `/code-review` pass over the full codebase surfaced one security/integrity
+bug, several correctness/robustness issues, and a few cleanups. All were fixed
+in one batch. Two new DB migrations were applied via `supabase db push`.
+
+### 1. `claim_daily_bonus()` still callable by clients (security — highest)
+The daily-bonus feature was disabled in the app on 2026-06-16, but the
+`claim_daily_bonus()` RPC (SECURITY DEFINER, directly UPDATEs
+`profiles.points_balance`) was left in the DB with its `GRANT EXECUTE … TO
+authenticated` intact. Any logged-in user could call
+`supabase.rpc('claim_daily_bonus')` from the browser and self-award 100–400
+points once per UTC day — breaking the core invariant "only `settle_match`
+changes balances".
+
+Fix: migration `20260617000000_disable_daily_bonus_grant.sql` REVOKEs EXECUTE
+from `authenticated`, `anon`, and **`PUBLIC`** (the last is essential — Postgres
+auto-grants EXECUTE to PUBLIC on CREATE FUNCTION, so revoking only
+`authenticated` would leave it callable). The function + the
+`last_bonus_date`/`streak_count` columns are kept (disabled, not dropped) so the
+feature can be re-enabled later by restoring the grant + the toast/action
+wiring.
+
+### 2. `parseKickoffAt` silent UTC fallback (`src/lib/openfootball.ts`)
+An offset-less or unparseable openfootball time was silently treated as UTC.
+WC2026 venues span UTC-4…UTC-7, so a missing offset shifts `kickoff_at` by
+hours, which moves exactly when predictions close (the `enforce_bet_window`
+trigger keys off `kickoff_at`). We can't recover the true offset without
+per-venue tz data, so the fix makes each fallback log a `console.warn` (visible
+in `/api/sync` server logs) instead of failing silently.
+
+### 3. One bad `settle_match` aborted the whole settlement batch (`/api/sync`)
+The settle loop returned a 500 on the first RPC error, leaving every subsequent
+due match unsettled. Matches settle independently, so the loop now logs each
+failure, collects it into a `failed[]` array returned in the response, and
+continues. A transient clock-skew miss on the 3h window self-heals next tick; a
+persistent failure is now visible without blocking the rest.
+
+### 4. Open redirect via `next` in `/auth/confirm` (`route.ts`)
+`next` (attacker-controllable) was used as `${origin}${next}`, which resolves
+off-site for values like `@evil.com` (parsed as userinfo). Added a `safeNext()`
+guard requiring a single leading `/` and rejecting `//` / `/\`, so the
+post-login redirect can only land on our own origin.
+
+### 5. Re-sync overwrote `result` of already-settled matches (`/api/sync`)
+On each sync the upsert rewrote `matches.result` from the feed even for settled
+matches. Since `settle_match` is idempotent (won't re-award), a post-settlement
+score correction would silently desync the stored result from the points
+already on the leaderboard. The sync now looks up settled matches first and
+freezes their `result` to the stored value before upserting.
+
+### 6. 3-hour settlement delay constant duplicated JS↔SQL
+`SETTLE_DELAY_HOURS = 3` (JS) and `interval '3 hours'` (settle_match) must agree
+but live in two languages. Can't share a literal, so added cross-referencing
+comments in both; with fix #3 in place, drift now degrades to a logged skip
+rather than aborting the batch.
+
+### 7. Crowd-split fetched the entire `bets` table (efficiency)
+`/matches` fetched all bet rows and tallied per-outcome counts in JS on every
+(public, uncached) load. Added the `match_bet_counts` view (migration
+`20260617010000_match_bet_counts_view.sql`) doing `COUNT(*) FILTER (…)` per
+outcome in Postgres — one small row per match. `src/app/matches/page.tsx` now
+queries the view. Same exposure as the `accuracy` view (plain view over the
+already-public `bets`; matches with no bets are absent and default to zeros).
+
+### 8. Duplicated sticky header (cleanup)
+`/matches` and `/leaderboard` had near-verbatim header markup. Extracted
+`src/components/app-header.tsx` (`AppHeader`), a server component taking
+`loggedIn` plus an optional `children` right-side slot (matches passes its
+points pill; leaderboard passes nothing). Both pages now render `<AppHeader>`.
+
+Verified: `npm run build` (TypeScript + lint + static generation) clean.
