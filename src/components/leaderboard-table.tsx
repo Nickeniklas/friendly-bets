@@ -25,23 +25,27 @@ type SortKey =
   | "streak";
 type SortDirection = "asc" | "desc";
 
-const SORT_LABELS: Record<SortKey, string> = {
-  points_balance: "Points",
-  bets_placed: "Bets",
-  correct: "Correct",
-  wrong: "Wrong",
-  win_rate_pct: "Win%",
-  streak: "Streak",
-};
+// The sortable numeric columns, in display order. Drives both the header row
+// and the data cells below, so a column is added/removed in one place.
+const SORT_COLUMNS: { key: SortKey; label: string }[] = [
+  { key: "points_balance", label: "Points" },
+  { key: "bets_placed", label: "Bets" },
+  { key: "correct", label: "Correct" },
+  { key: "wrong", label: "Wrong" },
+  { key: "win_rate_pct", label: "Win%" },
+  { key: "streak", label: "Streak" },
+];
 
 /** Clickable column header showing an arrow when it's the active sort key. */
 function SortableHeader({
   sortKeyName,
+  label,
   activeKey,
   direction,
   onSort,
 }: {
   sortKeyName: SortKey;
+  label: string;
   activeKey: SortKey;
   direction: SortDirection;
   onSort: (key: SortKey) => void;
@@ -52,7 +56,7 @@ function SortableHeader({
       onClick={() => onSort(sortKeyName)}
       className="cursor-pointer select-none whitespace-nowrap px-2 py-2.5 text-right text-[11px] font-semibold text-[var(--muted)]"
     >
-      {SORT_LABELS[sortKeyName]}
+      {label}
       {active && <span className="ml-0.5">{direction === "asc" ? "▲" : "▼"}</span>}
     </th>
   );
@@ -100,42 +104,16 @@ export function LeaderboardTable({ rows }: { rows: LeaderboardRow[] }) {
             <th className="whitespace-nowrap px-2 py-2.5 text-left text-[11px] font-semibold text-[var(--muted)]">
               Player
             </th>
-            <SortableHeader
-              sortKeyName="points_balance"
-              activeKey={sortKey}
-              direction={sortDirection}
-              onSort={handleSort}
-            />
-            <SortableHeader
-              sortKeyName="bets_placed"
-              activeKey={sortKey}
-              direction={sortDirection}
-              onSort={handleSort}
-            />
-            <SortableHeader
-              sortKeyName="correct"
-              activeKey={sortKey}
-              direction={sortDirection}
-              onSort={handleSort}
-            />
-            <SortableHeader
-              sortKeyName="wrong"
-              activeKey={sortKey}
-              direction={sortDirection}
-              onSort={handleSort}
-            />
-            <SortableHeader
-              sortKeyName="win_rate_pct"
-              activeKey={sortKey}
-              direction={sortDirection}
-              onSort={handleSort}
-            />
-            <SortableHeader
-              sortKeyName="streak"
-              activeKey={sortKey}
-              direction={sortDirection}
-              onSort={handleSort}
-            />
+            {SORT_COLUMNS.map(({ key, label }) => (
+              <SortableHeader
+                key={key}
+                sortKeyName={key}
+                label={label}
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={handleSort}
+              />
+            ))}
           </tr>
         </thead>
         <tbody>
