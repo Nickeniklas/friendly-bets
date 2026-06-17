@@ -78,7 +78,7 @@ openfootball JSON ──(sync job, every 5 min)──> Supabase: matches table
 
 ## Status
 
-**v1 is complete and live.** All of the original build order (Supabase schema/RLS/RPC,
+**v2 is complete and live.** All of the original build order (Supabase schema/RLS/RPC,
 the `/api/sync` sync+settle job, magic-link + Google auth, `/matches`, the place-pick
 flow, `settle_match`, `/leaderboard` + accuracy view, and the crowd-split polish) is
 done, along with subsequent post-v1 polish (UI redesign, Finnish times, Upcoming/Live/
@@ -89,4 +89,18 @@ current state see `CLAUDE.md` ("Status"); for the full step-by-step build log
 (including every feature, bug found/fixed, and why decisions were made), see
 `docs/HISTORY.md`.
 
-There are no open v2 ideas at the moment.
+## v3 ideas (backlog)
+
+Nothing here is committed — v2 is feature-complete and these are only candidates if the
+game is extended. Don't start on any of these without being asked.
+
+- **Live in-match scores / stats.** Currently only fixtures + final results are refreshed
+  from openfootball's periodically-updated JSON; a true live feed would need a different
+  data source.
+- **Knockout-bracket-specific logic** beyond simple per-match outcome prediction (e.g.
+  predicting who advances, bracket-wide scoring).
+- **Analysis tab** — a separate tab for statistical analysis and charts (e.g. points
+  over time, prediction accuracy trends, crowd-vs-outcome breakdowns, per-player and
+  league-wide stats).
+- **Real bookmaker odds** — listed in "Deferred (not v1)" above but intentionally
+  permanent: the fixed-points model removes the need, so this stays out of scope.

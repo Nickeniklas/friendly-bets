@@ -5,8 +5,8 @@ For a step-by-step account of how v1 was built (including bugs found and fixed a
 way), see `docs/HISTORY.md` — that detail has been moved out of this file to keep this
 brief current and short.
 
-## Status (as of 2026-06-16)
-**v1 is complete and live** at `https://friendly-bets-rust.vercel.app`. All of
+## Status (as of 2026-06-17)
+**v2 is complete and live** at `https://friendly-bets-rust.vercel.app`. All of
 `docs/PLAN.md`'s build order (steps 1-8) is DONE:
 
 > **2026-06-16 — model change: parimutuel → accuracy/points.** The staking/pool model
@@ -130,8 +130,8 @@ Post-v1 polish:
 All three pages from the Claude Design bundle (`Matches.dc.html`,
 `Leaderboard.dc.html`, `Login.dc.html`) are now implemented and visually
 consistent (shared header/bottom-nav/theme system where applicable). No known
-open bugs and no further UI redesign work is planned — anything else is a v2
-idea (see `docs/PLAN.md` "v2 ideas"), not part of the original plan, don't
+open bugs and no further UI redesign work is planned — anything else is a v3
+idea (see `docs/PLAN.md` "v3 ideas"), not part of the original plan, don't
 start on these without being asked.
 
 - `src/middleware.ts` was renamed to `src/proxy.ts` (commit `4cb951a`,

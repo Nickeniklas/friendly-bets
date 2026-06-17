@@ -6,7 +6,7 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
 
 ## Status
 
-**v1 is complete and live** at `https://friendly-bets-rust.vercel.app`.
+**v2 is complete and live** at `https://friendly-bets-rust.vercel.app`.
 
 > **2026-06-16 — model change: parimutuel pool → fixed-points scoring.** Players no
 > longer stake points. They predict each match's outcome (home win / draw / away win)
@@ -71,7 +71,7 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
   below).
 
 No known open bugs. All three Claude Design pages (Matches, Leaderboard,
-Login) are implemented. Anything else further is a v2 idea — see
+Login) are implemented. Anything else further is a v3 idea — see
 `docs/PLAN.md`.
 
 ## Getting started
