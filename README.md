@@ -43,7 +43,10 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
   live site.
 - Leaderboard (`/leaderboard`) shows a points podium (top 3) plus one
   sortable table covering every player (points, bets, correct, wrong, win %,
-  streak) joined from `profiles` and the `accuracy` view. Linked from the home
+  streak). A segmented **period selector** sits above the podium: **All time**
+  (from `profiles` + the `accuracy` view), **Last 10** (each player's recent
+  form), and one pill per **tournament round** that has settled bets — both the
+  podium and the table re-scope to the selected period. Linked from the home
   page and `/matches`.
 - Vercel Web Analytics is enabled (`@vercel/analytics`).
 - Magic-link emails go through custom SMTP (Brevo) — Supabase's default
@@ -187,17 +190,31 @@ Scoring lives in the rewritten `settle_match` RPC
 ### Leaderboard
 
 `/leaderboard` is a read-only Server Component (anyone can view, no login
-required). If there are at least 3 players, the top 3 by points balance are
-shown as a permanent podium (gold/silver/bronze circular avatars with
-initials, over medal-colored bases) — this is points-only and not affected by
-sorting below.
+required). At the top, a segmented **period selector**
+(`src/components/leaderboard-view.tsx`, `LeaderboardView`) lets you switch
+which period the podium + table show:
 
-Below the podium, `LeaderboardTable` (`src/components/leaderboard-table.tsx`)
-shows every player in one sortable table: rank, player, points, bets placed,
-correct, wrong, win rate %, and 🔥 streak. The page joins `profiles`
-(points) with the `accuracy` view (bets/correct/wrong/win rate/streak,
-defaulting to 0 for players with no settled bets) into a single row per
-player and passes it to the table as plain data — no schema or view changes.
+- **All time** (default) — points from `profiles.points_balance`, stats from
+  the `accuracy` view; lists every registered player (zeros for those with no
+  settled bets yet). This is the authoritative all-time standing.
+- **Last 10** — each player's recent form, aggregated over only their 10 most
+  recent settled predictions (newest first, across all rounds).
+- **One pill per tournament round** (`Group stage`, `Round of 32`, …, `Final`)
+  — appears only once that round has settled bets, in tournament order. Shows
+  only the players who predicted that round.
+
+The round and Last-10 periods are aggregated **in JS, server-side** from a
+single settled-bets fetch (joined to each match's `stage`) using the same
+formulas as the `accuracy` view — no new DB view/RPC. Every period's standings
+are precomputed on the server and handed to `LeaderboardView`, so switching
+pills is instant (no refetch).
+
+For the selected period: if it has at least 3 players, the top 3 by points are
+shown as a podium (gold/silver/bronze circular avatars with initials, over
+medal-colored bases). Below it, `LeaderboardTable`
+(`src/components/leaderboard-table.tsx`) shows that period's players in one
+sortable table: rank, player, points, bets, correct, wrong, win rate %, and 🔥
+streak.
 
 Tap any column header to sort by it; tapping the active column again toggles
 ascending/descending (an arrow shows the direction). All six numeric columns

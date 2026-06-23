@@ -5,7 +5,7 @@ For a step-by-step account of how v1 was built (including bugs found and fixed a
 way), see `docs/HISTORY.md` — that detail has been moved out of this file to keep this
 brief current and short.
 
-## Status (as of 2026-06-17)
+## Status (as of 2026-06-23)
 **v2 is complete and live** at `https://friendly-bets-rust.vercel.app`. All of
 `docs/PLAN.md`'s build order (steps 1-8) is DONE:
 
@@ -201,6 +201,32 @@ start on these without being asked.
     the migration must be applied or the page errors.**
   - Shared header extracted to `src/components/app-header.tsx` (`AppHeader`,
     used by `/matches` + `/leaderboard`).
+- Leaderboard period selector (2026-06-23) — `/leaderboard` gained a segmented
+  pill selector above the podium that re-scopes **both the podium and the
+  table** to a chosen period: **All time** (default), **Last 10** (each
+  player's most recent 10 settled bets = recent form), and one pill per
+  **tournament round** (`group`/`r32`/…/`final` → "Group stage"/"Round of
+  32"/…) that has any settled bets. Round pills appear automatically as the
+  sync job settles each round — no empty future-round pills are shown. New
+  client component `src/components/leaderboard-view.tsx` (`LeaderboardView`)
+  holds the selected-period state and switches instantly with no refetch
+  (mirrors the precomputed-content pattern of `matches-tabs.tsx`); the podium
+  for each period is a server-rendered `ReactNode` passed in as a prop, so
+  `PodiumColumn`/`PODIUM_CONFIG` stay server-side. **No DB migration** — the
+  round/Last-10 standings are aggregated **in JS, server-side** in
+  `src/app/leaderboard/page.tsx` (`buildStageRows` / `buildRecentRows`) from
+  one extra settled-bets fetch (`bets` joined to `matches(stage)` +
+  `profiles(display_name)`, filtered to `outcome IN ('won','lost')`), reusing
+  the same points/win%/streak formulas as the `accuracy` view. **All time is
+  deliberately left on the existing `profiles.points_balance` + `accuracy`
+  path** (authoritative balance; lists every registered player incl. zero-bet
+  ones), while the round/Last-10 periods are bets-derived (only players who
+  predicted in that scope) — this intentional difference is noted in code
+  comments. The `bets` table was already publicly readable
+  (`"bets: read all"` + GRANT to anon/authenticated), so no new grant/policy
+  was needed. See `docs/HISTORY.md`. The selector currently renders **above**
+  the podium (it governs the whole view); moving it between podium and table is
+  a one-line change if ever wanted.
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.

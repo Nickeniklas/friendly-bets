@@ -1,7 +1,9 @@
+import type { ReactNode } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { AppHeader } from "@/components/app-header";
 import { BottomNav } from "@/components/bottom-nav";
-import { LeaderboardTable, type LeaderboardRow } from "@/components/leaderboard-table";
+import { type LeaderboardRow } from "@/components/leaderboard-table";
+import { LeaderboardView, type Period } from "@/components/leaderboard-view";
 
 type PointsEntry = {
   id: string;
@@ -17,6 +19,198 @@ type AccuracyEntry = {
   win_rate_pct: number;
   streak: number;
 };
+
+// One settled bet joined to its match's round and the bettor's name. Supabase
+// returns the embedded relations as an object for to-one joins, but its
+// inferred types can also be an array — `related()` below normalizes both.
+type SettledBetRow = {
+  user_id: string;
+  points_awarded: number;
+  outcome: "won" | "lost";
+  placed_at: string;
+  matches: { stage: string } | { stage: string }[] | null;
+  profiles: { display_name: string | null } | { display_name: string | null }[] | null;
+};
+
+// Display names + canonical order for the round periods (codes from
+// `mapStage()` in src/lib/openfootball.ts).
+const STAGE_LABELS: Record<string, string> = {
+  group: "Group stage",
+  r32: "Round of 32",
+  r16: "Round of 16",
+  qf: "Quarter-finals",
+  sf: "Semi-finals",
+  third_place: "Third place",
+  final: "Final",
+};
+const STAGE_ORDER = ["group", "r32", "r16", "qf", "sf", "third_place", "final"];
+
+// Pull the single embedded row out of a Supabase to-one relation, whether it
+// came back as an object or a one-element array.
+function related<T>(rel: T | T[] | null | undefined): T | undefined {
+  if (rel == null) return undefined;
+  return Array.isArray(rel) ? rel[0] : rel;
+}
+
+/**
+ * Aggregate settled bets into per-round leaderboard rows, using the same
+ * formulas as the all-time `accuracy` view: points = Σ points_awarded,
+ * bets = count, correct/wrong by outcome, win% = round(correct/total*100, 1),
+ * streak = consecutive wins from the most recent bet. Returns one sorted
+ * (points desc) row list per stage that has any settled bets.
+ */
+function buildStageRows(bets: SettledBetRow[]): Map<string, LeaderboardRow[]> {
+  type Acc = {
+    id: string;
+    display_name: string | null;
+    points: number;
+    correct: number;
+    wrong: number;
+    history: { outcome: "won" | "lost"; placed_at: string }[];
+  };
+  const byStage = new Map<string, Map<string, Acc>>();
+
+  for (const b of bets) {
+    const stage = related(b.matches)?.stage;
+    if (!stage) continue;
+    let users = byStage.get(stage);
+    if (!users) {
+      users = new Map();
+      byStage.set(stage, users);
+    }
+    let acc = users.get(b.user_id);
+    if (!acc) {
+      acc = {
+        id: b.user_id,
+        display_name: related(b.profiles)?.display_name ?? null,
+        points: 0,
+        correct: 0,
+        wrong: 0,
+        history: [],
+      };
+      users.set(b.user_id, acc);
+    }
+    acc.points += b.points_awarded;
+    if (b.outcome === "won") acc.correct += 1;
+    else acc.wrong += 1;
+    acc.history.push({ outcome: b.outcome, placed_at: b.placed_at });
+  }
+
+  const result = new Map<string, LeaderboardRow[]>();
+  for (const [stage, users] of byStage) {
+    const rows: LeaderboardRow[] = [];
+    for (const acc of users.values()) {
+      const total = acc.correct + acc.wrong;
+      const winRate = total === 0 ? 0 : Math.round((acc.correct / total) * 1000) / 10;
+
+      // streak: consecutive wins counting back from the most recent bet.
+      const newestFirst = [...acc.history].sort((a, b) =>
+        b.placed_at.localeCompare(a.placed_at)
+      );
+      let streak = 0;
+      for (const h of newestFirst) {
+        if (h.outcome !== "won") break;
+        streak += 1;
+      }
+
+      rows.push({
+        id: acc.id,
+        display_name: acc.display_name,
+        points_balance: acc.points,
+        bets_placed: total,
+        correct: acc.correct,
+        wrong: acc.wrong,
+        win_rate_pct: winRate,
+        streak,
+      });
+    }
+    rows.sort((a, b) => b.points_balance - a.points_balance);
+    result.set(stage, rows);
+  }
+  return result;
+}
+
+/**
+ * "Recent form": for each player, aggregate only their most recent `limit`
+ * settled bets (across all rounds, newest first). Same formulas as
+ * buildStageRows. Returns rows sorted by points desc; players with no settled
+ * bets are omitted.
+ */
+function buildRecentRows(bets: SettledBetRow[], limit = 10): LeaderboardRow[] {
+  type Acc = {
+    id: string;
+    display_name: string | null;
+    history: { outcome: "won" | "lost"; placed_at: string; points: number }[];
+  };
+  const byUser = new Map<string, Acc>();
+
+  for (const b of bets) {
+    let acc = byUser.get(b.user_id);
+    if (!acc) {
+      acc = {
+        id: b.user_id,
+        display_name: related(b.profiles)?.display_name ?? null,
+        history: [],
+      };
+      byUser.set(b.user_id, acc);
+    }
+    acc.history.push({ outcome: b.outcome, placed_at: b.placed_at, points: b.points_awarded });
+  }
+
+  const rows: LeaderboardRow[] = [];
+  for (const acc of byUser.values()) {
+    // Newest first, then keep only the most recent `limit`.
+    const recent = [...acc.history]
+      .sort((a, b) => b.placed_at.localeCompare(a.placed_at))
+      .slice(0, limit);
+    if (recent.length === 0) continue;
+
+    let points = 0;
+    let correct = 0;
+    let wrong = 0;
+    let streak = 0;
+    let streakOpen = true; // counting wins back from the newest bet
+    for (const h of recent) {
+      points += h.points;
+      if (h.outcome === "won") {
+        correct += 1;
+        if (streakOpen) streak += 1;
+      } else {
+        wrong += 1;
+        streakOpen = false;
+      }
+    }
+    const total = correct + wrong;
+    rows.push({
+      id: acc.id,
+      display_name: acc.display_name,
+      points_balance: points,
+      bets_placed: total,
+      correct,
+      wrong,
+      win_rate_pct: total === 0 ? 0 : Math.round((correct / total) * 1000) / 10,
+      streak,
+    });
+  }
+  rows.sort((a, b) => b.points_balance - a.points_balance);
+  return rows;
+}
+
+// Build the top-3 podium for a period from its points-sorted rows, or null
+// (skip the podium) when there aren't at least 3 players — PodiumColumn
+// assumes exactly 3 columns.
+function renderPodium(
+  entries: { id: string; display_name: string | null; points_balance: number }[]
+): ReactNode {
+  if (entries.length < 3) return null;
+  return (
+    <div className="mb-7 flex items-end gap-2 px-1">
+      <PodiumColumn place={2} entry={entries[1]} />
+      <PodiumColumn place={1} entry={entries[0]} />
+      <PodiumColumn place={3} entry={entries[2]} />
+    </div>
+  );
+}
 
 // Avatar initials for the podium: first letter of the first two "words"
 // (splitting on the punctuation people use in usernames), or the first two
@@ -140,6 +334,7 @@ export default async function LeaderboardPage() {
     },
     { data: points, error: pointsError },
     { data: accuracy, error: accuracyError },
+    { data: settledBets, error: betsError },
   ] = await Promise.all([
     // Only used to decide whether to show the header's "Sign out" button.
     supabase.auth.getUser(),
@@ -151,13 +346,22 @@ export default async function LeaderboardPage() {
     supabase
       .from("accuracy")
       .select("user_id, bets_placed, correct, wrong, win_rate_pct, streak"),
+    // Settled bets joined to their match's round + the bettor's name, used to
+    // build the per-round periods. `!inner` drops bets without a joinable
+    // match/profile; all-time still comes from profiles + accuracy above.
+    supabase
+      .from("bets")
+      .select(
+        "user_id, points_awarded, outcome, placed_at, matches!inner(stage), profiles!inner(display_name)"
+      )
+      .in("outcome", ["won", "lost"]),
   ]);
 
-  if (pointsError || accuracyError) {
+  if (pointsError || accuracyError || betsError) {
     return (
       <div className="p-8 text-red-600">
         Failed to load leaderboard:{" "}
-        {(pointsError ?? accuracyError)?.message}
+        {(pointsError ?? accuracyError ?? betsError)?.message}
       </div>
     );
   }
@@ -183,10 +387,43 @@ export default async function LeaderboardPage() {
     };
   });
 
-  // Podium-style top 3 by points — a permanent showcase, separate from the
-  // sortable table below. If there aren't at least 3 players, skip it — it
-  // assumes 3 columns.
-  const podium = pointsRows.length >= 3 ? pointsRows.slice(0, 3) : [];
+  // Per-round standings, aggregated from settled bets. All-time stays on the
+  // profiles + accuracy path above (authoritative balance, lists every
+  // registered player); round periods are bets-derived (only players who had a
+  // settled bet that round).
+  const allSettledBets = (settledBets ?? []) as unknown as SettledBetRow[];
+  const stageRows = buildStageRows(allSettledBets);
+
+  // Period selector options: All time first, then each round that has any
+  // settled bets, in canonical tournament order. Any unrecognized stage code
+  // (a mapStage fallback slug) is appended last so its data is never dropped.
+  const periods: Period[] = [
+    { key: "all", label: "All time", podium: renderPodium(pointsRows), rows },
+  ];
+
+  // Recent-form view (each player's last 10 settled bets), right after
+  // All time. Only shown once anyone has a settled bet.
+  const recentRows = buildRecentRows(allSettledBets);
+  if (recentRows.length > 0) {
+    periods.push({
+      key: "last10",
+      label: "Last 10",
+      podium: renderPodium(recentRows),
+      rows: recentRows,
+    });
+  }
+
+  const extraStages = [...stageRows.keys()].filter((s) => !STAGE_ORDER.includes(s));
+  for (const stage of [...STAGE_ORDER, ...extraStages]) {
+    const sRows = stageRows.get(stage);
+    if (!sRows || sRows.length === 0) continue;
+    periods.push({
+      key: stage,
+      label: STAGE_LABELS[stage] ?? stage,
+      podium: renderPodium(sRows),
+      rows: sRows,
+    });
+  }
 
   return (
     <div className="min-h-screen pb-[72px]">
@@ -200,30 +437,11 @@ export default async function LeaderboardPage() {
           World Cup 2026 · {pointsRows.length} player{pointsRows.length === 1 ? "" : "s"}
         </p>
 
-        {pointsRows.length === 0 && (
+        {pointsRows.length === 0 ? (
           <p className="mb-7 text-sm text-[var(--muted)]">No players yet.</p>
-        )}
-
-        {/* Podium (top 3) */}
-        {podium.length === 3 && (
-          <div className="mb-7 flex items-end gap-2 px-1">
-            <PodiumColumn place={2} entry={podium[1]} />
-            <PodiumColumn place={1} entry={podium[0]} />
-            <PodiumColumn place={3} entry={podium[2]} />
-          </div>
-        )}
-
-        {/* All players: one sortable table covering points + accuracy */}
-        {pointsRows.length > 0 && (
-          <>
-            <div className="mb-1 text-[11px] font-bold tracking-[0.08em] text-[var(--muted)] uppercase">
-              All players
-            </div>
-            <p className="mb-3 text-xs text-[var(--muted)]">
-              Tap a column header to sort.
-            </p>
-            <LeaderboardTable rows={rows} />
-          </>
+        ) : (
+          // Period selector (All time + per round) wrapping the podium + table.
+          <LeaderboardView periods={periods} />
         )}
       </div>
 

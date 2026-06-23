@@ -50,6 +50,18 @@ export default async function LoginPage({
 
         <GoogleButton />
 
+        {/* Let people browse the app without an account — /matches and
+            /leaderboard are public (read-only without login). They can sign in
+            later when they want to predict. Placed right under the sign-in
+            options (not buried at the bottom) and styled as a bordered button
+            so it's easy to spot. */}
+        <Link
+          href="/matches"
+          className="mt-2.5 flex w-full items-center justify-center rounded-xl border-[1.5px] border-[var(--line)] bg-[var(--surface-2)] px-4 py-[13px] text-sm font-semibold text-[var(--foreground)] transition hover:border-[var(--green)] hover:text-[var(--green)]"
+        >
+          View matches as guest →
+        </Link>
+
         {message && (
           <p className="mt-3 text-sm text-[var(--green-text)]">{message}</p>
         )}
@@ -90,16 +102,6 @@ export default async function LoginPage({
             </div>
           </div>
         </div>
-
-        {/* Let people browse the app without an account — /matches and
-            /leaderboard are public (read-only without login). They can sign in
-            later when they want to predict. */}
-        <Link
-          href="/matches"
-          className="mt-4 block text-center text-sm font-semibold text-[var(--muted)] underline-offset-4 hover:text-[var(--foreground)] hover:underline"
-        >
-          View matches as guest →
-        </Link>
       </div>
 
       <ThemeTogglePill />

@@ -1010,3 +1010,65 @@ already-public `bets`; matches with no bets are absent and default to zeros).
 points pill; leaderboard passes nothing). Both pages now render `<AppHeader>`.
 
 Verified: `npm run build` (TypeScript + lint + static generation) clean.
+
+## Post-v1 — leaderboard period selector (per-round + Last 10) (2026-06-23)
+
+Owner request: see more than just all-time scores on `/leaderboard` — break the
+standings down by period, with a control sitting "between podium and table"
+(open to tabs / slider / selector). After exploring the data model we confirmed
+the periods should be **tournament rounds** (the natural unit for a World Cup),
+the control a **segmented pill selector**, and the selected period should
+re-scope **both the podium and the table**.
+
+### Key data-model finding (why no migration was needed)
+Everything required was already in place: `matches.stage` holds the round code
+(`group`/`r32`/`r16`/`qf`/`sf`/`third_place`/`final`, from `mapStage()` in
+`src/lib/openfootball.ts`), each settled bet records `points_awarded` (int,
+`NOT NULL DEFAULT 0`) and `outcome` (`won`/`lost`), and `bets` is publicly
+readable (`"bets: read all"` SELECT policy + `GRANT SELECT … TO
+anon, authenticated`). So per-round standings can be aggregated **in JS,
+server-side** from one settled-bets fetch — no new view/RPC, no `supabase db
+push` step.
+
+### Design choice — all-time stays on its existing path
+"All time" deliberately keeps using `profiles.points_balance` + the `accuracy`
+view, for two reasons: (a) `points_balance` is the authoritative running total
+(summing `points_awarded` instead would drift on the dormant pre-V2 legacy rows
+that carry `points_awarded = 0` — see the V2 terminology-cleanup entry above),
+and (b) it lists **every** registered player, including those with no settled
+bets. The round + Last-10 periods are bets-derived, so they list only players
+who predicted in that scope — the desired "who's winning this round / lately"
+behavior. The intentional difference is documented in code comments.
+
+### Changes made
+- New client component `src/components/leaderboard-view.tsx` (`LeaderboardView`):
+  holds the selected-period state, renders the segmented pill selector +
+  active period's podium + table, switches instantly with **no refetch** —
+  mirrors the precomputed-content pattern of `matches-tabs.tsx`. The podium is
+  passed in as a server-rendered `ReactNode` per period, so
+  `PodiumColumn`/`PODIUM_CONFIG` stay in `page.tsx` (server-side).
+- `src/app/leaderboard/page.tsx`: added a parallel fetch of settled bets
+  (`bets` → `select(user_id, points_awarded, outcome, placed_at,
+  matches!inner(stage), profiles!inner(display_name)).in("outcome",
+  ["won","lost"])`); `buildStageRows()` groups those by stage→user and
+  `buildRecentRows()` takes each user's most recent 10 bets, both using the
+  `accuracy` view's formulas (points = Σ`points_awarded`, win% =
+  round(correct/total·100, 1), streak = consecutive wins from the newest bet).
+  Assembles a `periods` array: **All time**, then **Last 10** (if any settled
+  bets), then one period per stage with settled bets in canonical order
+  (`STAGE_ORDER`; any unrecognized `mapStage` fallback slug is appended last so
+  no data is dropped). The old inline podium + `<LeaderboardTable>` block was
+  replaced by a single `<LeaderboardView periods={periods} />`.
+- `LeaderboardTable` + its `LeaderboardRow` type are reused unchanged.
+
+### Notes
+- Round pills appear automatically as the sync job settles each round — at the
+  tournament's start only "All time" + "Last 10" + "Group stage" show, since
+  only group matches have settled; playoff pills surface later with no code
+  change.
+- The selector currently renders **above** the podium (it governs the whole
+  view, podium included). The plan text said "between podium and table"; owner
+  confirmed above-podium is fine. Moving it under the podium is a one-line
+  change in `LeaderboardView` if ever wanted.
+
+Verified: `npx tsc --noEmit` and `eslint` on the changed files clean.
