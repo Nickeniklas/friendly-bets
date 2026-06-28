@@ -120,11 +120,14 @@ Both end at the same `/auth/confirm` route, which exchanges Supabase's PKCE
 `profiles` trigger fires the same way regardless of which method created the
 account, so a Google signup gets a profile just like a magic-link signup.
 
-`/login` also has a "View matches as guest" link — `/matches` and
-`/leaderboard` are public (read-only without login), so visitors can browse
-before signing in; they just can't place predictions until they do. Once signed
-in, the `/matches` and `/leaderboard` sticky headers show a "Sign out" button
-(`src/components/sign-out-button.tsx`).
+`/login` also has a "View matches as guest" button (a full-width bordered
+button directly under the sign-in options) — `/matches` and `/leaderboard` are
+public (read-only without login), so visitors can browse before signing in;
+they just can't place predictions until they do. Guests aren't stranded on
+those pages either: the shared sticky header (`src/components/app-header.tsx`)
+shows a green **"Log in"** link when no one is signed in (handy for someone
+linked straight to `/matches`), and swaps it for a "Sign out" button
+(`src/components/sign-out-button.tsx`) once signed in.
 
 One-time setup in the Supabase dashboard — Authentication -> URL Configuration — DONE:
 

@@ -1072,3 +1072,33 @@ behavior. The intentional difference is documented in code comments.
   change in `LeaderboardView` if ever wanted.
 
 Verified: `npx tsc --noEmit` and `eslint` on the changed files clean.
+
+## Post-v1 — guest sign-in discoverability (2026-06-28)
+
+Owner feedback from real use: the "View matches as guest" link on `/login` was
+buried at the very bottom of the card (below the "Heads up" warning box) and
+styled as muted underline text — even knowing what to look for it was almost
+hidden. Separately, a real user who was linked straight to `/matches` (instead
+of `/` or `/login`) got stuck with no obvious way to sign in, since the guest
+list pages only showed a "Sign out" control when *already* logged in.
+
+### Changes made
+- `src/app/login/page.tsx` — moved the "View matches as guest →" link up to
+  sit **directly under the Google button** (right after the two sign-in
+  options, before the "Heads up" card) and restyled it from muted underline
+  text into a **full-width bordered button** (`--surface-2` background,
+  `--foreground` text, green border/text on hover) so it reads at the same
+  visual weight as the sign-in actions while staying visually secondary.
+- `src/components/app-header.tsx` — the shared sticky header now renders a
+  green **"Log in"** link (→ `/login`) in the same right-side slot where
+  `SignOutButton` appears, shown whenever `loggedIn` is false. It uses the
+  brand green (`bg-[var(--green)]`, white text, `hover:opacity-90`) so it
+  stands out from the muted "Sign out" pill. Both `/matches` and
+  `/leaderboard` already pass `loggedIn={!!user}`, so guests on either page
+  now get an obvious entry point. Required a `next/link` import in the header.
+
+### Notes
+- No DB/schema/auth-flow changes — purely UI placement + contrast.
+- Both changes are committed: the guest-link move landed in `bff8957`
+  (alongside the leaderboard period selector) and the navbar Log in button in
+  `bac9625`.

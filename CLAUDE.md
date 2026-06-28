@@ -5,7 +5,7 @@ For a step-by-step account of how v1 was built (including bugs found and fixed a
 way), see `docs/HISTORY.md` — that detail has been moved out of this file to keep this
 brief current and short.
 
-## Status (as of 2026-06-23)
+## Status (as of 2026-06-28)
 **v2 is complete and live** at `https://friendly-bets-rust.vercel.app`. All of
 `docs/PLAN.md`'s build order (steps 1-8) is DONE:
 
@@ -227,6 +227,19 @@ start on these without being asked.
   was needed. See `docs/HISTORY.md`. The selector currently renders **above**
   the podium (it governs the whole view); moving it between podium and table is
   a one-line change if ever wanted.
+- Guest sign-in discoverability (2026-06-28) — two small UI changes from real
+  use, no DB/auth-flow change: (1) the "View matches as guest →" link on
+  `/login` (`src/app/login/page.tsx`) moved from the bottom of the card up to
+  **directly under the Google button**, restyled from muted underline text to
+  a full-width bordered button (`--surface-2` bg, green border/text on hover)
+  so it's easy to spot; (2) the shared `AppHeader`
+  (`src/components/app-header.tsx`) now shows a green **"Log in"** link (→
+  `/login`) in the same right-side slot as `SignOutButton`, rendered whenever
+  `loggedIn` is false — so a guest who lands straight on `/matches` (e.g. via a
+  shared link) has an obvious way to sign in. Both `/matches` + `/leaderboard`
+  already pass `loggedIn={!!user}`. Committed in `bff8957` (guest-link move,
+  alongside the period selector) and `bac9625` (navbar Log in button). See
+  `docs/HISTORY.md`.
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.
