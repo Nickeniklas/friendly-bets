@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { SignOutButton } from "@/components/sign-out-button";
 
@@ -29,7 +30,19 @@ export function AppHeader({
         <div className="flex items-center gap-2">
           {children}
           <ThemeToggle />
-          {loggedIn && <SignOutButton />}
+          {loggedIn ? (
+            <SignOutButton />
+          ) : (
+            // Guests reach /matches directly (e.g. via a shared link) and can be
+            // lost on how to sign in — give them an obvious entry point. Styled
+            // in the brand green (not muted like Sign out) so it stands out.
+            <Link
+              href="/login"
+              className="rounded-full bg-[var(--green)] px-3.5 py-[5px] text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              Log in
+            </Link>
+          )}
         </div>
       </div>
     </div>
