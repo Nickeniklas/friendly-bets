@@ -48,6 +48,12 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
   form), and one pill per **tournament round** that has settled bets — both the
   podium and the table re-scope to the selected period. Linked from the home
   page and `/matches`.
+- Stats tab (`/stats`) "for the curious": a **You** section (login-gated —
+  your accuracy by round, pick tendencies, contrarian record, ranking and best
+  calls), a public **The Crowd** section (wisdom-of-the-crowd accuracy, biggest
+  upset, most divisive/consensus matches, draw-shyness, fan favourite), and a
+  public **Records** section (league-wide superlatives). All derived from
+  existing data — no new DB objects. See "Stats" below.
 - Vercel Web Analytics is enabled (`@vercel/analytics`).
 - Magic-link emails go through custom SMTP (Brevo) — Supabase's default
   shared mailer caps at 2 emails/hour, which isn't enough for multiple
@@ -61,8 +67,8 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
   all app wiring was removed. See "Daily login bonus (disabled)" below.
 - `/matches` has a mobile-first redesign: sticky header with points total + a
   dark/light toggle, a dismissible "How to play" card, tap-an-outcome
-  predicting (home / draw / away), and a bottom Matches/Leaderboard tab bar
-  (see "Place a prediction" and "Theme" below). The dark/light toggle is
+  predicting (home / draw / away), and a bottom Matches/Leaderboard/Stats tab
+  bar (see "Place a prediction" and "Theme" below). The dark/light toggle is
   app-wide.
 - `/leaderboard` has the matching redesign: same sticky header + bottom nav,
   a podium for the top 3 players (gold/silver/bronze avatars and bases), and
@@ -74,7 +80,8 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
   below).
 
 No known open bugs. All three Claude Design pages (Matches, Leaderboard,
-Login) are implemented. Anything else further is a v3 idea — see
+Login) are implemented, plus the `/stats` tab (the former "Analysis tab" v3
+idea, shipped 2026-06-29). Anything else further is a v3 idea — see
 `docs/PLAN.md`.
 
 ## Getting started
@@ -224,6 +231,31 @@ ascending/descending (an arrow shows the direction). All six numeric columns
 are sortable. Sorting is entirely client-side (`useState`/`useMemo`, no
 refetch), defaults to points descending on load, and the rank column always
 reflects the current sort order.
+
+### Stats
+
+`/stats` is a third read-only tab "for the curious" (anyone can view; the
+personal section is gated behind login). Like `/leaderboard`, it's a Server
+Component that computes everything up front and hands precomputed sections to a
+client switcher (`src/components/stats-view.tsx`, `StatsView`) — switching is
+instant, no refetch. All aggregation lives in `src/lib/stats.ts` (pure
+functions; same formulas as the `accuracy` view), and it needs **no new DB
+view/RPC** — everything derives from the existing `bets`, `matches`,
+`match_bet_counts`, `profiles`, and `accuracy` objects.
+
+Three sections:
+
+- **You** (login-gated; guests see a "log in to unlock" card) — overview tiles
+  (points, rank, win %, current/best streak, predictions), accuracy by stage,
+  your home/draw/away pick tendencies, your record with vs. against the crowd
+  plus underdog calls landed, where you rank vs. the field, and your best/
+  toughest single calls.
+- **The Crowd** (public) — wisdom-of-the-crowd accuracy %, biggest upset, most
+  divisive and strongest-consensus matches (as 3-way split bars), whether we're
+  draw-shy, and the most-backed team.
+- **Records** (public) — longest win streak, biggest single-round haul, best
+  underdog hunter, most accurate, most predictions, sharpest contrarian
+  (rate-based records need at least 5 settled predictions to qualify).
 
 ### Team flags
 

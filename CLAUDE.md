@@ -5,7 +5,7 @@ For a step-by-step account of how v1 was built (including bugs found and fixed a
 way), see `docs/HISTORY.md` — that detail has been moved out of this file to keep this
 brief current and short.
 
-## Status (as of 2026-06-28)
+## Status (as of 2026-06-29)
 **v2 is complete and live** at `https://friendly-bets-rust.vercel.app`. All of
 `docs/PLAN.md`'s build order (steps 1-8) is DONE:
 
@@ -240,6 +240,34 @@ start on these without being asked.
   already pass `loggedIn={!!user}`. Committed in `bff8957` (guest-link move,
   alongside the period selector) and `bac9625` (navbar Log in button). See
   `docs/HISTORY.md`.
+- Stats / data analysis tab (2026-06-29) — a third tab `/stats` "for the
+  curious", merged to `main`. It mirrors the leaderboard's server-compute →
+  client-switch pattern: `src/app/stats/page.tsx` (server) does one
+  `Promise.all` fetch (settled `bets` joined to `matches` + `profiles`, the
+  `match_bet_counts` view joined to `matches`, `profiles`, and `getUser()`),
+  flattens the joins, and runs pure aggregations, then hands three precomputed
+  `ReactNode` sections to `src/components/stats-view.tsx` (`StatsView`, a
+  sticky pill switcher like `MatchesTabs`). The three sections:
+  **You** (login-gated; guests get a login-CTA card) — overview tiles
+  (points/rank/win%/current+best streak/predictions), accuracy-by-stage bars,
+  home/draw/away pick tendencies, a with-vs-against-the-crowd contrarian record
+  + underdog calls landed (`points_awarded === 15`), percentile standing, and
+  best/worst calls; **The Crowd** (public) — wisdom-of-the-crowd accuracy %,
+  biggest upset, most divisive / strongest-consensus match, a draw-shyness
+  comparison, and the most-backed team; **Records** (public) — longest streak,
+  biggest single-round haul, best underdog hunter, most accurate, most
+  predictions, sharpest contrarian (rate-based records need ≥5 settled bets to
+  qualify). All aggregation lives in the new **`src/lib/stats.ts`** (pure, no
+  React/Supabase — `computePersonalStats` / `computeCrowdFacts` /
+  `computeRecords` plus shared types); the formulas match the `accuracy` view
+  (points = Σ points_awarded, win% = round(correct/total*1000)/10). The
+  previously-duplicated `STAGE_LABELS` / `STAGE_ORDER` / `related()` were moved
+  into `stats.ts` and are now imported by **both** `stats/page.tsx` and
+  `src/app/leaderboard/page.tsx`. `src/components/bottom-nav.tsx` gained the
+  third 📊 Stats tab (the `flex-1` columns handle three items unchanged).
+  **No DB migration** — every stat derives from existing tables/views, all
+  already readable by anon/authenticated, so the Crowd + Records sections work
+  logged-out. See `docs/HISTORY.md`.
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.

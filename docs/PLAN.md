@@ -99,8 +99,9 @@ game is extended. Don't start on any of these without being asked.
   data source.
 - **Knockout-bracket-specific logic** beyond simple per-match outcome prediction (e.g.
   predicting who advances, bracket-wide scoring).
-- **Analysis tab** — a separate tab for statistical analysis and charts (e.g. points
-  over time, prediction accuracy trends, crowd-vs-outcome breakdowns, per-player and
-  league-wide stats).
+- ~~**Analysis tab**~~ — **DONE (2026-06-29)**, no longer a backlog idea. Shipped as the
+  `/stats` tab (You / The Crowd / Records sections — personal stats, crowd fun-facts, and
+  league-wide superlatives). All derived from existing data, no migration. See `CLAUDE.md`
+  ("Status") and `docs/HISTORY.md`.
 - **Real bookmaker odds** — listed in "Deferred (not v1)" above but intentionally
   permanent: the fixed-points model removes the need, so this stays out of scope.

@@ -1102,3 +1102,75 @@ list pages only showed a "Sign out" control when *already* logged in.
 - Both changes are committed: the guest-link move landed in `bff8957`
   (alongside the leaderboard period selector) and the navbar Log in button in
   `bac9625`.
+
+## Post-v1 — stats / data analysis tab (2026-06-29)
+
+A third tab `/stats` "for the curious", to make competing more interesting by
+surfacing insights into how you're doing and how the group is betting. This had
+long been a v3 backlog idea ("Analysis tab" in `docs/PLAN.md`); the owner asked
+to design and build it. Scope was settled up front with the owner: focus on
+**personal stats + crowd fun-facts + records**, **own data only** (no external
+/ bookmaker data — explicitly out of scope), and **personal stats gated behind
+login while crowd facts + records stay public**.
+
+### Key finding — no migration needed
+Everything is derivable from objects that already exist and are already readable
+by anon/authenticated (so the public sections work logged-out): `bets`
+(`pick`, `points_awarded`, `outcome`, `placed_at`), `matches` (`stage`,
+`team1`, `team2`, `result`), the `match_bet_counts` view (per-match
+team1/draw/team2 pick counts), `profiles`, and the `accuracy` view. So this was
+a pure app-layer feature — zero schema/RLS/grant changes.
+
+### Architecture (mirrors the leaderboard period selector)
+Same server-compute → client-switch pattern as `/leaderboard`:
+- `src/app/stats/page.tsx` (Server Component) does one `Promise.all` —
+  `getUser()`, settled `bets` joined to `matches` + `profiles`,
+  `match_bet_counts` joined to `matches`, and `profiles` — flattens the
+  Supabase to-one joins (via the shared `related()`), runs the aggregations,
+  and builds three precomputed `ReactNode` sections.
+- `src/components/stats-view.tsx` (`StatsView`, `"use client"`) is a sticky
+  pill switcher (You / The Crowd / Records) that just toggles which
+  precomputed section is visible — no refetch, exactly like `MatchesTabs` /
+  `LeaderboardView`.
+- `src/lib/stats.ts` (new) holds **all** aggregation as pure functions (no
+  React, no Supabase) so it stays readable/testable: `computePersonalStats`,
+  `computeCrowdFacts`, `computeRecords`, plus shared helpers/types. Stat
+  formulas match the `accuracy` view: points = Σ `points_awarded`,
+  win% = `round(correct/total*1000)/10`, streak = consecutive wins; an underdog
+  call landed = a won bet with `points_awarded === 15`.
+
+### Sections
+- **You** (login-gated; guests get a login-CTA card instead): overview tiles
+  (points, rank #/total, win%, current + best streak, predictions),
+  accuracy-by-stage bars, home/draw/away pick tendencies with per-pick win%, a
+  with-vs-against-the-crowd contrarian record (crowd plurality from
+  `match_bet_counts`) + underdog calls landed, percentile standing vs the
+  field, and best/worst single-bet calls.
+- **The Crowd** (public): wisdom-of-the-crowd accuracy (% of settled matches
+  where the plurality pick was right), biggest upset (result with the smallest
+  pick share), most divisive vs strongest-consensus match (rendered as 3-way
+  stacked split bars), a draw-shyness comparison (% of our picks that were
+  draws vs % of matches that actually drew), and the most-backed team to win.
+- **Records** (public superlatives, each naming the holder): longest win
+  streak, biggest single-round points haul, best underdog hunter, most
+  accurate, most predictions placed, sharpest contrarian. The two rate-based
+  records (most accurate, sharpest contrarian) require ≥5 settled bets to
+  qualify (`MIN_BETS_FOR_RATE`) so a lucky 1/1 can't top them.
+
+### Other changes
+- `src/components/bottom-nav.tsx` gained the third 📊 **Stats** entry in
+  `NAV_ITEMS`; the existing `flex-1` columns handle three tabs with no other
+  change.
+- Refactor: `STAGE_LABELS`, `STAGE_ORDER`, and the `related()` to-one-join
+  normalizer were moved out of `src/app/leaderboard/page.tsx` into
+  `src/lib/stats.ts` and are now imported by both pages (removing the
+  duplication rather than copying it a third time).
+
+### Notes
+- Verified: `npx tsc --noEmit` clean, `eslint` on the changed files clean,
+  `next build` succeeds with `/stats` registered. Dev-server smoke test:
+  `/stats` returns 200; as a guest the **You** section shows the login CTA
+  while **The Crowd** + **Records** render with real tournament data. The
+  logged-in **You** path is pure, type-checked code sharing the same formulas
+  (couldn't be exercised headlessly without a Supabase session cookie).
+- Pushed to `main` by the owner.
