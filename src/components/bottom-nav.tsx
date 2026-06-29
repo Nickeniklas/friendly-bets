@@ -6,9 +6,10 @@ import { usePathname } from "next/navigation";
 const NAV_ITEMS = [
   { href: "/matches", icon: "⚽", label: "Matches" },
   { href: "/leaderboard", icon: "🏆", label: "Leaderboard" },
+  { href: "/stats", icon: "📊", label: "Stats" },
 ] as const;
 
-/** Fixed bottom tab bar shared between /matches and /leaderboard. */
+/** Fixed bottom tab bar shared between /matches, /leaderboard and /stats. */
 export function BottomNav() {
   const pathname = usePathname();
 
