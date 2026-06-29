@@ -4,6 +4,7 @@ import { AppHeader } from "@/components/app-header";
 import { BottomNav } from "@/components/bottom-nav";
 import { type LeaderboardRow } from "@/components/leaderboard-table";
 import { LeaderboardView, type Period } from "@/components/leaderboard-view";
+import { STAGE_LABELS, STAGE_ORDER, related } from "@/lib/stats";
 
 type PointsEntry = {
   id: string;
@@ -32,25 +33,9 @@ type SettledBetRow = {
   profiles: { display_name: string | null } | { display_name: string | null }[] | null;
 };
 
-// Display names + canonical order for the round periods (codes from
-// `mapStage()` in src/lib/openfootball.ts).
-const STAGE_LABELS: Record<string, string> = {
-  group: "Group stage",
-  r32: "Round of 32",
-  r16: "Round of 16",
-  qf: "Quarter-finals",
-  sf: "Semi-finals",
-  third_place: "Third place",
-  final: "Final",
-};
-const STAGE_ORDER = ["group", "r32", "r16", "qf", "sf", "third_place", "final"];
-
-// Pull the single embedded row out of a Supabase to-one relation, whether it
-// came back as an object or a one-element array.
-function related<T>(rel: T | T[] | null | undefined): T | undefined {
-  if (rel == null) return undefined;
-  return Array.isArray(rel) ? rel[0] : rel;
-}
+// STAGE_LABELS / STAGE_ORDER (round names + canonical order) and `related()`
+// (Supabase to-one join normalizer) are shared with the /stats tab — see
+// src/lib/stats.ts.
 
 /**
  * Aggregate settled bets into per-round leaderboard rows, using the same
