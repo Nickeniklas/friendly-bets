@@ -268,6 +268,38 @@ start on these without being asked.
   **No DB migration** — every stat derives from existing tables/views, all
   already readable by anon/authenticated, so the Crowd + Records sections work
   logged-out. See `docs/HISTORY.md`.
+- Knockout draw-pick scoring fix (2026-06-30) — **PR1 of a two-part change.**
+  Bug: openfootball resolves a knockout tie by penalties > extra time > full
+  time, so a match level after 90 min was stored with `result` = the advancing
+  team (never `draw`); `settle_match` graded `pick = result`, so a `draw` pick on
+  any knockout that went to ET/penalties ALWAYS lost — a real R32 draw pick was
+  wrongly marked wrong. Fix ("Option B"): a new `matches.result_ft` column stores
+  the **full-time (90-min) result only** (`team1`/`draw`/`team2`; for the group
+  stage it equals `result`, for a knockout decided in ET/pens it is `draw`), and
+  a pick now wins if `pick = result OR pick = result_ft`. So on a 1-1 knockout
+  won by team1 on penalties: `draw` wins (matches `result_ft`) AND `team1` wins
+  (matches `result`, they advanced); `team2` loses. The **underdog bonus is now
+  per picked outcome** (a correct pick gets +5 if *its own* outcome drew <33% of
+  the match's bets) since two outcomes can win — for a single-winner match this
+  is identical to the old rule. Files: migration
+  `20260630000000_full_time_result.sql` (adds `result_ft`, backfills =`result`,
+  rewrites `settle_match`); `src/lib/openfootball.ts` (`parseFullTimeResult`,
+  `result_ft` on `MatchRow`); `src/app/api/sync/route.ts` (freeze `result_ft` too
+  for settled matches); `src/app/matches/page.tsx` (selects `result_ft`, flags
+  both advancer + draw as winners, "(a.e.t.)" status label). Personal stats and
+  the `accuracy` view derive correctness from `bets.outcome`, so they self-correct
+  after re-settlement — no change needed. **Crowd facts in
+  `src/lib/stats.ts`/`/stats` still key off `result` (the advancer), not
+  `result_ft`** — a known minor inconsistency, deliberately left for now. **Manual
+  steps:** (1) apply the migration; (2) run the one-off
+  `supabase/scripts/resettle_knockout_matches.sql` (un-settles already-settled
+  knockout matches so they re-grade — group stage untouched, it's a no-op there);
+  (3) trigger `/api/sync` (cron-job.org "Run now" or wait 5 min) to repopulate
+  `result_ft` from the feed and re-settle. **PR2 (not started):** a knockout-only
+  "wins in 90 min" bet mode for team picks — +5 bonus if the team leads at full
+  time (loses if it only wins in ET), so a 90-min underdog can score up to 20.
+  Needs a `bets` flag + UI + grading. Decided: team picks only (draw stays
+  regular). Don't start without being asked.
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.
@@ -415,7 +447,10 @@ tricks. Explain non-obvious Next.js / Supabase choices inline.
 ## Scoring rules (the points model)
 - Pick one of three outcomes per match: `team1` (home win) / `draw` / `team2` (away win).
   No stake.
-- **Correct pick: +10 points.**
+- **Correct pick: +10 points.** A pick is correct if it matches the overall result OR the
+  full-time (90-min) result — so on a knockout that went to extra time/penalties, a `draw`
+  pick wins (it was level at 90) AND the team that advanced wins. See the 2026-06-30 fix
+  in Status / the invariants section.
 - **Underdog bonus: +5** if the player's picked outcome got **fewer than 33%** of all
   bets placed on that match (correct underdog pick = **15** total).
 - **Wrong pick: −5 points.**
@@ -430,12 +465,18 @@ tricks. Explain non-obvious Next.js / Supabase choices inline.
   matches), and is now the ONLY path that changes a balance (the daily-bonus RPC is
   disabled — see below). It is called automatically by the sync job, not by an admin. It
   writes each bet's `points_awarded` and adds it to `profiles.points_balance`.
-- Underdog determination at settlement is crowd-based: the result outcome is an underdog
-  if it drew fewer than 33% of all bets on the match (only correct picks can earn the
-  bonus, and a correct pick's outcome is the result, so the match shares one
-  determination).
-- Draw is a first-class outcome — pickable, can win, counts toward the bet distribution.
-  No push / refund logic exists anymore.
+- A pick is CORRECT if it matches EITHER the overall result OR the full-time (90-min)
+  result: `pick = matches.result OR pick = matches.result_ft` (see the 2026-06-30 fix in
+  Status). For the group stage `result_ft = result`, so this is just `pick = result`; for
+  a knockout decided in extra time/penalties, `result` is the advancer and `result_ft` is
+  `draw`, so both the advancer pick and a `draw` pick win.
+- Underdog determination at settlement is crowd-based and **per picked outcome**: a correct
+  pick earns the +5 bonus if the outcome *it* picked drew fewer than 33% of all bets on the
+  match. (Since two outcomes can win the same knockout, the bonus can't be a single
+  per-match determination anymore; for a single-winner match it reduces to the old rule.)
+- Draw is a first-class outcome — pickable, can win (incl. as the full-time result of a
+  knockout that went to ET), counts toward the bet distribution. No push / refund logic
+  exists anymore.
 - Balances never change via direct client writes — only via the settlement RPC. Lock this
   down with RLS; the settlement RPC is security-definer.
 - Daily login bonus (`claim_daily_bonus`) — **DISABLED 2026-06-16.** All app wiring was

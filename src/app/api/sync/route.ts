@@ -35,16 +35,17 @@ export async function GET(request: NextRequest) {
   const ofMatches = await fetchWorldCupMatches();
   const rows = ofMatches.map(toMatchRow);
 
-  // Don't let a re-sync overwrite the `result` of an already-settled match.
-  // Points were awarded against the result as it stood at settlement, and
-  // settle_match is idempotent (it won't re-award), so if the feed later
-  // corrects a score the stored result would silently disagree with the points
-  // already on the leaderboard. Freeze each settled match's result to its
-  // stored value before upserting. (status/settled_at are omitted from the
-  // payload below anyway, so only `result` needs this protection.)
+  // Don't let a re-sync overwrite the `result` / `result_ft` of an
+  // already-settled match. Points were awarded against those values as they
+  // stood at settlement, and settle_match is idempotent (it won't re-award), so
+  // if the feed later corrects a score the stored result would silently
+  // disagree with the points already on the leaderboard. Freeze each settled
+  // match's result + full-time result to its stored value before upserting.
+  // (status/settled_at are omitted from the payload below anyway, so only these
+  // two result columns need this protection.)
   const { data: settledRows, error: settledError } = await supabase
     .from("matches")
-    .select("external_ref, result")
+    .select("external_ref, result, result_ft")
     .eq("status", "settled");
 
   if (settledError) {
@@ -52,11 +53,19 @@ export async function GET(request: NextRequest) {
   }
 
   const settledResultByRef = new Map(
-    (settledRows ?? []).map((m) => [m.external_ref, m.result as MatchRow["result"]])
+    (settledRows ?? []).map((m) => [
+      m.external_ref,
+      {
+        result: m.result as MatchRow["result"],
+        result_ft: m.result_ft as MatchRow["result_ft"],
+      },
+    ])
   );
   for (const row of rows) {
-    if (settledResultByRef.has(row.external_ref)) {
-      row.result = settledResultByRef.get(row.external_ref) ?? row.result;
+    const frozen = settledResultByRef.get(row.external_ref);
+    if (frozen) {
+      row.result = frozen.result ?? row.result;
+      row.result_ft = frozen.result_ft ?? row.result_ft;
     }
   }
 

@@ -51,7 +51,16 @@ export interface MatchRow {
   kickoff_at: string; // ISO timestamp
   group_label: string | null;
   stage: string;
+  /** Overall outcome / who advanced (penalties > extra time > full time). */
   result: "team1" | "team2" | "draw" | null;
+  /**
+   * Full-time (90-minute) result only — ignores extra time and penalties.
+   * For the group stage this equals `result`; for a knockout that went to extra
+   * time / penalties this is 'draw'. Lets a 'draw' pick win a knockout that was
+   * level after 90 minutes (see settle_match in
+   * supabase/migrations/20260630000000_full_time_result.sql).
+   */
+  result_ft: "team1" | "team2" | "draw" | null;
 }
 
 export async function fetchWorldCupMatches(): Promise<OpenFootballMatch[]> {
@@ -180,6 +189,19 @@ export function parseResult(
   return null;
 }
 
+/**
+ * The full-time (90-minute) result, ignoring extra time and penalties. In
+ * openfootball's shape `ft` is the score after 90 minutes (`et`/`p` are the
+ * separate later stages), so a knockout level at 90 returns 'draw' here even
+ * though `parseResult` returns the eventual et/penalty winner.
+ */
+export function parseFullTimeResult(
+  score?: OpenFootballScore
+): "team1" | "team2" | "draw" | null {
+  if (!score?.ft) return null;
+  return compareGoals(score.ft);
+}
+
 function compareGoals([g1, g2]: [number, number]): "team1" | "team2" | "draw" {
   if (g1 > g2) return "team1";
   if (g2 > g1) return "team2";
@@ -196,5 +218,6 @@ export function toMatchRow(match: OpenFootballMatch): MatchRow {
     group_label: match.group ?? null,
     stage: mapStage(match.round),
     result: parseResult(match.score),
+    result_ft: parseFullTimeResult(match.score),
   };
 }

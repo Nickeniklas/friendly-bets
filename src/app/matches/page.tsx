@@ -14,6 +14,7 @@ type Match = {
   stage: string;
   status: string;
   result: string | null;
+  result_ft: string | null;
 };
 
 type Bet = {
@@ -85,8 +86,13 @@ function statusInfo(
   bettable: boolean,
 ): { label: string; color: "muted" | "gold" } {
   if (match.status === "settled") {
-    if (match.result === "team1") return { label: `${match.team1} won`, color: "muted" };
-    if (match.result === "team2") return { label: `${match.team2} won`, color: "muted" };
+    // A knockout level after 90 minutes (result_ft === 'draw') but won on
+    // extra time / penalties advanced one team — note "(a.e.t.)" so the label
+    // doesn't look like it contradicts a winning 'draw' pick on the same card.
+    const wentToExtraTime = match.result_ft === "draw" && match.result !== "draw";
+    const suffix = wentToExtraTime ? " (a.e.t.)" : "";
+    if (match.result === "team1") return { label: `${match.team1} won${suffix}`, color: "muted" };
+    if (match.result === "team2") return { label: `${match.team2} won${suffix}`, color: "muted" };
     return { label: "Draw", color: "gold" };
   }
   if (bettable) return { label: "Upcoming", color: "muted" };
@@ -136,7 +142,7 @@ export default async function MatchesPage() {
   const [{ data: matches, error }, { data: betCounts }] = await Promise.all([
     supabase
       .from("matches")
-      .select("id, team1, team2, kickoff_at, group_label, stage, status, result")
+      .select("id, team1, team2, kickoff_at, group_label, stage, status, result, result_ft")
       .order("kickoff_at", { ascending: true }),
     supabase.from("match_bet_counts").select("match_id, team1, draw, team2"),
   ]);
@@ -235,6 +241,9 @@ export default async function MatchesPage() {
         }
       : undefined;
 
+    // A pick wins on either the overall result or the full-time (90-min)
+    // result, so on a knockout decided in extra time BOTH the advancer and
+    // 'draw' are flagged as winners (Option B).
     return (
       <MatchCard
         key={match.id}
@@ -245,9 +254,15 @@ export default async function MatchesPage() {
         statusColor={color}
         homeName={match.team1}
         awayName={match.team2}
-        homeIsWinner={match.status === "settled" && match.result === "team1"}
-        drawIsWinner={match.status === "settled" && match.result === "draw"}
-        awayIsWinner={match.status === "settled" && match.result === "team2"}
+        homeIsWinner={
+          match.status === "settled" &&
+          (match.result === "team1" || match.result_ft === "team1")
+        }
+        drawIsWinner={match.status === "settled" && match.result_ft === "draw"}
+        awayIsWinner={
+          match.status === "settled" &&
+          (match.result === "team2" || match.result_ft === "team2")
+        }
         distribution={distribution}
         bettable={bettable}
         loggedIn={!!user}
