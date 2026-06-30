@@ -28,6 +28,7 @@ type BetRow = {
   pick: Pick;
   points_awarded: number;
   outcome: "won" | "lost";
+  ft_winner: boolean;
   placed_at: string;
   matches:
     | { id: string; stage: string; team1: string; team2: string; result: Pick | null; kickoff_at: string }
@@ -402,7 +403,7 @@ export default async function StatsPage() {
     supabase
       .from("bets")
       .select(
-        "user_id, pick, points_awarded, outcome, placed_at, matches!inner(id, stage, team1, team2, result, kickoff_at), profiles!inner(display_name)"
+        "user_id, pick, points_awarded, outcome, ft_winner, placed_at, matches!inner(id, stage, team1, team2, result, kickoff_at), profiles!inner(display_name)"
       )
       .in("outcome", ["won", "lost"]),
     supabase
@@ -434,6 +435,7 @@ export default async function StatsPage() {
         pick: b.pick,
         points_awarded: b.points_awarded,
         outcome: b.outcome,
+        ft_winner: b.ft_winner,
         placed_at: b.placed_at,
         matchId: m.id,
         stage: m.stage,

@@ -22,6 +22,7 @@ type Bet = {
   pick: string;
   outcome: string | null;
   points_awarded: number;
+  ft_winner: boolean;
 };
 
 // Count of bets per outcome on a match, used for the crowd-split display and
@@ -182,7 +183,7 @@ export default async function MatchesPage() {
         .single(),
       supabase
         .from("bets")
-        .select("match_id, pick, outcome, points_awarded")
+        .select("match_id, pick, outcome, points_awarded, ft_winner")
         .eq("user_id", user.id),
     ]);
 
@@ -238,6 +239,7 @@ export default async function MatchesPage() {
           pick: bet.pick as ExistingBet["pick"],
           outcome: bet.outcome as ExistingBet["outcome"],
           pointsAwarded: bet.points_awarded,
+          ftWinner: bet.ft_winner,
         }
       : undefined;
 
@@ -254,6 +256,7 @@ export default async function MatchesPage() {
         statusColor={color}
         homeName={match.team1}
         awayName={match.team2}
+        isKnockout={match.stage !== "group"}
         homeIsWinner={
           match.status === "settled" &&
           (match.result === "team1" || match.result_ft === "team1")

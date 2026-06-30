@@ -15,6 +15,10 @@ export type ExistingBet = {
   pick: Pick;
   outcome: "won" | "lost" | "refunded" | null;
   pointsAwarded: number;
+  // "Wins in 90 min" mode — a knockout-only, team-pick-only prediction that the
+  // team is ahead at full time (graded strictly, worth +5). See settle_match in
+  // 20260701000000_ft_winner_pick.sql.
+  ftWinner: boolean;
 };
 
 // Share (0–1) of all bets on this match that went to each outcome — used to
@@ -37,6 +41,7 @@ export function MatchCard({
   statusColor,
   homeName,
   awayName,
+  isKnockout,
   homeIsWinner,
   drawIsWinner,
   awayIsWinner,
@@ -52,6 +57,9 @@ export function MatchCard({
   statusColor: "muted" | "gold";
   homeName: string;
   awayName: string;
+  // Knockout matches (anything but the group stage) offer the "wins in 90 min"
+  // mode on team picks; group matches don't (they have no extra time).
+  isKnockout: boolean;
   homeIsWinner: boolean;
   drawIsWinner: boolean;
   awayIsWinner: boolean;
@@ -61,6 +69,9 @@ export function MatchCard({
   existingBet?: ExistingBet;
 }) {
   const [selected, setSelected] = useState<Pick | null>(null);
+  // Whether the "wins in 90 min" toggle is on. Only meaningful for a knockout
+  // team pick; reset whenever the selection changes (see toggleSelect).
+  const [ftMode, setFtMode] = useState(false);
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [betResult, setBetResult] = useState<PlaceBetResult | null>(null);
@@ -71,17 +82,22 @@ export function MatchCard({
   // the result shows as a toast and the page stays put — refreshing just
   // re-fetches this match's distribution/existingBet without navigating, so the
   // user's scroll position is untouched.
+  // "Wins in 90 min" is offered only on a knockout team pick (not draw).
+  const ftEligible = isKnockout && (selected === "team1" || selected === "team2");
+
   async function handlePlaceBet() {
     if (selected === null || pending) return;
     setPending(true);
     const formData = new FormData();
     formData.set("matchId", matchId);
     formData.set("pick", selected);
+    formData.set("ftWinner", String(ftEligible && ftMode));
     const result = await placeBet(formData);
     setPending(false);
     setBetResult(result);
     if (result.status === "success") {
       setSelected(null);
+      setFtMode(false);
       router.refresh();
     }
   }
@@ -95,6 +111,7 @@ export function MatchCard({
 
   function toggleSelect(pick: Pick) {
     if (!canPick) return;
+    setFtMode(false); // a fresh selection always starts in standard mode
     setSelected((prev) => (prev === pick ? null : pick));
   }
 
@@ -104,6 +121,10 @@ export function MatchCard({
 
   const pickLabel = (pick: Pick) =>
     pick === "team1" ? homeName : pick === "team2" ? awayName : "Draw";
+
+  // Label for an already-placed bet, marking the "wins in 90′" mode.
+  const describeBet = (bet: ExistingBet) =>
+    `${pickLabel(bet.pick)}${bet.ftWinner ? " (in 90′)" : ""}`;
 
   // An outcome qualifies for the underdog bonus while it holds fewer than 33%
   // of the bets placed so far. Shown as a hint so players understand the bonus.
@@ -192,9 +213,39 @@ export function MatchCard({
         >
           <div className="mb-1 text-[13px] font-semibold">
             Predict: {pickLabel(selected)}
+            {ftEligible && ftMode ? " to win in 90′" : ""}
           </div>
+
+          {/* Knockout team pick: choose "to advance" (standard) or "win in 90′"
+              (strict, +5). Draw and group matches skip this. */}
+          {ftEligible && (
+            <div className="mb-3 flex gap-2">
+              <ModeButton
+                active={!ftMode}
+                title="To advance"
+                subtitle="Wins via 90′ or extra time"
+                onClick={() => setFtMode(false)}
+              />
+              <ModeButton
+                active={ftMode}
+                title="Win in 90′ · +5"
+                subtitle="Only if ahead at full time"
+                onClick={() => setFtMode(true)}
+              />
+            </div>
+          )}
+
           <div className="mb-3.5 text-xs leading-relaxed text-[var(--muted)]">
-            Correct: +10 pts{isUnderdog(selected) ? " +5 underdog = +15 pts" : ""} · Wrong: −5 pts
+            {(() => {
+              const base = ftMode && ftEligible ? 15 : 10;
+              const underdog = isUnderdog(selected);
+              return (
+                <>
+                  Correct: +{base} pts
+                  {underdog ? ` +5 underdog = +${base + 5} pts` : ""} · Wrong: −5 pts
+                </>
+              );
+            })()}
           </div>
           <div className="flex gap-2">
             <button
@@ -222,14 +273,14 @@ export function MatchCard({
         <div className="mt-3 flex items-center justify-between border-t border-[var(--line)] pt-3">
           <div className="flex items-center gap-1.5 text-[13px] font-medium text-[var(--green-text)]">
             <span>✓</span>
-            <span>Predicted — {pickLabel(existingBet.pick)}</span>
+            <span>Predicted — {describeBet(existingBet)}</span>
           </div>
         </div>
       )}
 
       {/* Result */}
       {hasResult && existingBet && (
-        <ResultRow existingBet={existingBet} pickName={pickLabel(existingBet.pick)} />
+        <ResultRow existingBet={existingBet} pickName={describeBet(existingBet)} />
       )}
 
       {/* Bet-placement toast — fixed above the bottom nav, self-dismissing. */}
@@ -297,6 +348,35 @@ function OutcomeButton({
       {isWinner && (
         <div className="mt-[5px] text-[11px] font-semibold text-[var(--green)]">Winner ✓</div>
       )}
+    </button>
+  );
+}
+
+/** One of the two knockout bet-mode options ("To advance" / "Win in 90′"). */
+function ModeButton({
+  active,
+  title,
+  subtitle,
+  onClick,
+}: {
+  active: boolean;
+  title: string;
+  subtitle: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        background: active ? "var(--green-bg)" : "var(--surface-2)",
+        borderColor: active ? "var(--green)" : "var(--line)",
+        color: active ? "var(--green-text)" : "var(--foreground)",
+      }}
+      className="min-w-0 flex-1 cursor-pointer rounded-[10px] border-[1.5px] p-2.5 text-left transition-all duration-150"
+    >
+      <div className="text-[13px] font-semibold leading-tight">{title}</div>
+      <div className="mt-0.5 text-[11px] leading-tight opacity-70">{subtitle}</div>
     </button>
   );
 }

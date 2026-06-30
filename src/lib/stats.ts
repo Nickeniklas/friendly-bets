@@ -48,6 +48,9 @@ export type StatsBet = {
   pick: Pick;
   points_awarded: number;
   outcome: "won" | "lost";
+  // "Wins in 90 min" mode (knockout team picks). Affects how points_awarded maps
+  // to an underdog hit — see isUnderdogHit().
+  ft_winner: boolean;
   placed_at: string;
   matchId: string;
   stage: string;
@@ -55,6 +58,23 @@ export type StatsBet = {
   team2: string;
   result: Pick | null;
 };
+
+/**
+ * Whether a settled bet earned the +5 crowd underdog bonus. The bonus can't be
+ * read off points_awarded alone anymore: a correct standard pick is +10 (+5
+ * underdog = 15), but a correct "wins in 90′" pick is +15 (10 + 5 ft-bonus) and
+ * +20 with the underdog bonus. So an underdog hit is a won bet whose total is
+ * exactly the no-underdog baseline plus 5.
+ */
+export function isUnderdogHit(b: {
+  outcome: "won" | "lost";
+  points_awarded: number;
+  ft_winner: boolean;
+}): boolean {
+  if (b.outcome !== "won") return false;
+  const baseline = b.ft_winner ? 15 : 10;
+  return b.points_awarded === baseline + 5;
+}
 
 /** Crowd pick split for one match, flattened from match_bet_counts + matches. */
 export type CrowdCount = {
@@ -161,7 +181,7 @@ export function computePersonalStats(
       correct += 1;
       currentStreak += 1;
       bestStreak = Math.max(bestStreak, currentStreak);
-      if (b.points_awarded === 15) underdogHits += 1; // +15 = correct underdog pick
+      if (isUnderdogHit(b)) underdogHits += 1;
     } else {
       currentStreak = 0;
     }
@@ -408,7 +428,7 @@ export function computeRecords(bets: StatsBet[], crowdByMatch: Map<string, Crowd
       acc.correct += 1;
       acc.runningStreak += 1;
       acc.longestStreak = Math.max(acc.longestStreak, acc.runningStreak);
-      if (b.points_awarded === 15) acc.underdogHits += 1;
+      if (isUnderdogHit(b)) acc.underdogHits += 1;
     } else {
       acc.runningStreak = 0;
     }

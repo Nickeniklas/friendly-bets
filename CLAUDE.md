@@ -295,11 +295,29 @@ start on these without being asked.
   `supabase/scripts/resettle_knockout_matches.sql` (un-settles already-settled
   knockout matches so they re-grade — group stage untouched, it's a no-op there);
   (3) trigger `/api/sync` (cron-job.org "Run now" or wait 5 min) to repopulate
-  `result_ft` from the feed and re-settle. **PR2 (not started):** a knockout-only
-  "wins in 90 min" bet mode for team picks — +5 bonus if the team leads at full
-  time (loses if it only wins in ET), so a 90-min underdog can score up to 20.
-  Needs a `bets` flag + UI + grading. Decided: team picks only (draw stays
-  regular). Don't start without being asked.
+  `result_ft` from the feed and re-settle.
+- Knockout "wins in 90 min" bet mode (2026-06-30) — **PR2, done.** On knockout
+  matches a TEAM pick can be upgraded to "wins in 90′": graded strictly on the
+  full-time result (`pick = result_ft`), worth +5 on top, so a correct 90-min
+  call is +15 (or +20 with the underdog bonus); it LOSES if the team only won in
+  ET/penalties. The standard pick ("to advance") is unchanged (wins via 90′ OR
+  ET/pens). Mode is **team-picks-only** (a draw is already a full-time concept)
+  and **knockout-only** (group matches have no ET, so the bonus would be free).
+  New `bets.ft_winner boolean DEFAULT false` (migration
+  `20260701000000_ft_winner_pick.sql`) with a CHECK that it's only true for team
+  picks; the `enforce_bet_window` trigger now also rejects `ft_winner` on
+  group-stage matches; `settle_match` rewritten to grade ft_winner picks
+  strictly and add the +5. UI: a two-option toggle ("To advance" / "Win in 90′
+  · +5") appears in the confirm panel of `match-card.tsx` for knockout team
+  picks (`isKnockout` prop from `page.tsx`, which also reads `ft_winner` back for
+  the confirmed/result rows — shown as "(in 90′)"). `placeBet`
+  (`matches/actions.ts`) takes an `ftWinner` form field. **Stats impact:** the
+  old "underdog hit = `points_awarded === 15`" heuristic broke (a correct
+  non-underdog 90-min pick is also 15, a correct underdog 90-min pick is 20), so
+  `src/lib/stats.ts` got `isUnderdogHit()` (won && points === baseline+5, where
+  baseline is 15 for ft_winner else 10) and `StatsBet`/`/stats` carry `ft_winner`
+  now. **Manual step:** apply `20260701000000_ft_winner_pick.sql` (adds the
+  column + constraint + trigger/RPC changes).
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.
@@ -453,6 +471,11 @@ tricks. Explain non-obvious Next.js / Supabase choices inline.
   in Status / the invariants section.
 - **Underdog bonus: +5** if the player's picked outcome got **fewer than 33%** of all
   bets placed on that match (correct underdog pick = **15** total).
+- **"Wins in 90′" bonus: +5** (knockout team picks only) — a player may upgrade a team
+  pick to predict that team is *ahead at full time* (90 min). Graded strictly on
+  `result_ft`: correct = +15 (or +20 with the underdog bonus), but it loses if the team
+  only advanced via extra time/penalties. Draw and group matches don't offer it. See the
+  2026-06-30 PR2 Status entry.
 - **Wrong pick: −5 points.**
 - Balances may go negative — intended.
 

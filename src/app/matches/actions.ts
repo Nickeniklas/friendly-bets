@@ -27,6 +27,11 @@ const VALID_PICKS = ["team1", "draw", "team2"] as const;
 export async function placeBet(formData: FormData): Promise<PlaceBetResult> {
   const matchId = formData.get("matchId") as string;
   const pick = formData.get("pick") as string;
+  // "Wins in 90 min" mode — knockout team picks only (see the ft_winner column /
+  // settle_match in 20260701000000_ft_winner_pick.sql). The DB also enforces
+  // both rules (a CHECK + the bet-window trigger), so this is just a friendly
+  // early guard.
+  const ftWinner = formData.get("ftWinner") === "true";
 
   const supabase = await createClient();
   const {
@@ -41,10 +46,15 @@ export async function placeBet(formData: FormData): Promise<PlaceBetResult> {
     return { status: "error", message: "Invalid prediction" };
   }
 
+  if (ftWinner && pick === "draw") {
+    return { status: "error", message: "Invalid prediction" };
+  }
+
   const { error } = await supabase.from("bets").insert({
     user_id: user.id,
     match_id: matchId,
     pick,
+    ft_winner: ftWinner,
   });
 
   if (error) {
@@ -64,6 +74,9 @@ function friendlyBetError(message: string): string {
   }
   if (message.includes("duplicate key value")) {
     return "You've already predicted this match.";
+  }
+  if (message.includes("ft_winner picks are not allowed")) {
+    return "“Wins in 90” is only available on knockout matches.";
   }
   return message;
 }
