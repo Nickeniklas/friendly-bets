@@ -522,6 +522,18 @@ step-by-step build log:
 8. Polish: crowd-split (% of picks per outcome) display on `/matches`
 
 ## Gotchas
+- No test suite in this repo. Verify changes with `npx tsc --noEmit` (fast,
+  catches missing props / type drift); there is no `npm test`.
+- A `{/* comment */}` placed *between* JSX attributes is a parse error
+  (`TS1005`) — put the comment on a line above the element/tag instead.
+- One-off data-fix SQL (not schema changes) lives in `supabase/scripts/`, NOT
+  `supabase/migrations/`. `supabase db push` only runs `migrations/`, so these
+  are pasted into the SQL editor by hand (e.g. `resettle_knockout_matches.sql`).
+- Re-grading already-settled matches: `settle_match` skips `status='settled'`
+  (idempotent), so to re-score finished matches you must first un-settle them —
+  reverse each bet's `points_awarded` out of the balance, reset
+  `bets.points_awarded`/`outcome`, set `matches.status='scheduled'` — then let
+  `/api/sync` repopulate results and re-settle under the new logic.
 - openfootball has no clean match id. Implemented external_ref strategy (see
   `src/lib/openfootball.ts`): knockout matches (have a stable `num` field) →
   `wc2026-m{num}`; group-stage matches (stable team names from day one, no `num`) →
