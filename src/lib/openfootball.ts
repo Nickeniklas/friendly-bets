@@ -61,6 +61,16 @@ export interface MatchRow {
    * supabase/migrations/20260630000000_full_time_result.sql).
    */
   result_ft: "team1" | "team2" | "draw" | null;
+  // Actual goal counts, for DISPLAY only (never graded — see the migration
+  // 20260702000000_match_scores.sql). ft = score after 90 minutes (present once
+  // played); et = after extra time and p = penalty shoot-out, both knockout-only
+  // and null otherwise. Half-time (score.ht) is intentionally dropped.
+  ft_team1: number | null;
+  ft_team2: number | null;
+  et_team1: number | null;
+  et_team2: number | null;
+  p_team1: number | null;
+  p_team2: number | null;
 }
 
 export async function fetchWorldCupMatches(): Promise<OpenFootballMatch[]> {
@@ -208,8 +218,16 @@ function compareGoals([g1, g2]: [number, number]): "team1" | "team2" | "draw" {
   return "draw";
 }
 
+/** Split an optional [team1, team2] goal pair into two nullable numbers. */
+function goals(pair?: [number, number]): [number | null, number | null] {
+  return [pair?.[0] ?? null, pair?.[1] ?? null];
+}
+
 /** Convert one openfootball match into a row ready for `matches` upsert. */
 export function toMatchRow(match: OpenFootballMatch): MatchRow {
+  const [ft_team1, ft_team2] = goals(match.score?.ft);
+  const [et_team1, et_team2] = goals(match.score?.et);
+  const [p_team1, p_team2] = goals(match.score?.p);
   return {
     external_ref: buildExternalRef(match),
     team1: match.team1,
@@ -219,5 +237,11 @@ export function toMatchRow(match: OpenFootballMatch): MatchRow {
     stage: mapStage(match.round),
     result: parseResult(match.score),
     result_ft: parseFullTimeResult(match.score),
+    ft_team1,
+    ft_team2,
+    et_team1,
+    et_team2,
+    p_team1,
+    p_team2,
   };
 }

@@ -15,6 +15,14 @@ type Match = {
   status: string;
   result: string | null;
   result_ft: string | null;
+  // Actual goal counts (display only) — null until the sync job records them.
+  // ft = after 90'; et/p = extra time / penalties (knockouts only).
+  ft_team1: number | null;
+  ft_team2: number | null;
+  et_team1: number | null;
+  et_team2: number | null;
+  p_team1: number | null;
+  p_team2: number | null;
 };
 
 type Bet = {
@@ -100,6 +108,36 @@ function statusInfo(
   return { label: "Awaiting result", color: "muted" };
 }
 
+// The score to show on a settled match card. `home`/`away` are the headline
+// goal counts (the extra-time aggregate when a knockout went to ET, otherwise
+// the 90-minute score); `note` adds "a.e.t." / "4–2 pens" context so the score
+// doesn't look like it contradicts a knockout winner. Returns undefined for
+// matches that aren't settled or have no recorded score yet (older settled
+// matches stay note-less until the next /api/sync backfills their goals).
+type MatchScore = { home: number; away: number; note?: string };
+
+function matchScore(match: Match): MatchScore | undefined {
+  if (match.status !== "settled") return undefined;
+
+  // Prefer the extra-time aggregate as the headline when it exists (a knockout
+  // that went to ET), otherwise the 90-minute score.
+  const home = match.et_team1 ?? match.ft_team1;
+  const away = match.et_team2 ?? match.ft_team2;
+  if (home == null || away == null) return undefined;
+
+  // A knockout level at 90 but decided later (result_ft = 'draw', result not) —
+  // same signal statusInfo uses for its "(a.e.t.)" label.
+  const wentToExtraTime = match.result_ft === "draw" && match.result !== "draw";
+  let note: string | undefined;
+  if (match.p_team1 != null && match.p_team2 != null) {
+    note = `${match.p_team1}–${match.p_team2} pens`;
+  } else if (wentToExtraTime) {
+    note = "a.e.t.";
+  }
+
+  return { home, away, note };
+}
+
 type DayGroup = { day: string; matches: Match[] };
 
 // Groups matches by their kickoff date (formatted via formatDate),
@@ -143,7 +181,9 @@ export default async function MatchesPage() {
   const [{ data: matches, error }, { data: betCounts }] = await Promise.all([
     supabase
       .from("matches")
-      .select("id, team1, team2, kickoff_at, group_label, stage, status, result, result_ft")
+      .select(
+        "id, team1, team2, kickoff_at, group_label, stage, status, result, result_ft, ft_team1, ft_team2, et_team1, et_team2, p_team1, p_team2",
+      )
       .order("kickoff_at", { ascending: true }),
     supabase.from("match_bet_counts").select("match_id, team1, draw, team2"),
   ]);
@@ -256,6 +296,7 @@ export default async function MatchesPage() {
         statusColor={color}
         homeName={match.team1}
         awayName={match.team2}
+        score={matchScore(match)}
         isKnockout={match.stage !== "group"}
         homeIsWinner={
           match.status === "settled" &&

@@ -43,6 +43,11 @@ export async function GET(request: NextRequest) {
   // match's result + full-time result to its stored value before upserting.
   // (status/settled_at are omitted from the payload below anyway, so only these
   // two result columns need this protection.)
+  //
+  // Note: the display-only score columns (ft_/et_/p_team1/2) are deliberately
+  // NOT frozen — settle_match never reads them, so a feed correction can't
+  // desync points, and already-settled matches (which have NULL scores until
+  // the first sync after this feature shipped) need this pass to backfill them.
   const { data: settledRows, error: settledError } = await supabase
     .from("matches")
     .select("external_ref, result, result_ft")

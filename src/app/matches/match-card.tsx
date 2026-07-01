@@ -33,6 +33,10 @@ export type Distribution = {
 
 const UNDERDOG_THRESHOLD = 0.33;
 
+// The final score to show on a settled match. `note` carries "a.e.t." /
+// "4–2 pens" context; see matchScore() in page.tsx.
+export type MatchScore = { home: number; away: number; note?: string };
+
 export function MatchCard({
   matchId,
   stage,
@@ -41,6 +45,7 @@ export function MatchCard({
   statusColor,
   homeName,
   awayName,
+  score,
   isKnockout,
   homeIsWinner,
   drawIsWinner,
@@ -57,6 +62,9 @@ export function MatchCard({
   statusColor: "muted" | "gold";
   homeName: string;
   awayName: string;
+  // Final score for settled matches (undefined for upcoming/live or when the
+  // sync job hasn't recorded goals yet).
+  score?: MatchScore;
   // Knockout matches (anything but the group stage) offer the "wins in 90 min"
   // mode on team picks; group matches don't (they have no extra time).
   isKnockout: boolean;
@@ -148,22 +156,36 @@ export function MatchCard({
         </div>
       </div>
 
+      {/* Final score (settled matches only) — a prominent "2 – 1" with an
+          optional "a.e.t." / "4–2 pens" note so it doesn't look like it
+          contradicts a knockout winner. */}
+      {score && (
+        <div className="mb-3 text-center">
+          <div className="text-2xl font-bold tabular-nums leading-none text-[var(--foreground)]">
+            {score.home} <span className="text-[var(--muted)]">–</span> {score.away}
+          </div>
+          {score.note && (
+            <div className="mt-1 text-[11px] font-medium text-[var(--muted)]">{score.note}</div>
+          )}
+        </div>
+      )}
+
       {/* Three-way outcome buttons: Home win / Draw / Away win */}
       <div className="flex gap-2">
         <OutcomeButton
           kind="team"
           teamName={homeName}
           selected={canPick && selected === "team1"}
-          flagged={homeIsWinner || existingBet?.pick === "team1"}
           isWinner={homeIsWinner}
+          isUserPick={existingBet?.pick === "team1"}
           disabled={!canPick}
           onClick={() => toggleSelect("team1")}
         />
         <OutcomeButton
           kind="draw"
           selected={canPick && selected === "draw"}
-          flagged={drawIsWinner || existingBet?.pick === "draw"}
           isWinner={drawIsWinner}
+          isUserPick={existingBet?.pick === "draw"}
           disabled={!canPick}
           onClick={() => toggleSelect("draw")}
         />
@@ -171,8 +193,8 @@ export function MatchCard({
           kind="team"
           teamName={awayName}
           selected={canPick && selected === "team2"}
-          flagged={awayIsWinner || existingBet?.pick === "team2"}
           isWinner={awayIsWinner}
+          isUserPick={existingBet?.pick === "team2"}
           disabled={!canPick}
           onClick={() => toggleSelect("team2")}
         />
@@ -302,25 +324,39 @@ export function MatchCard({
   );
 }
 
-/** One of the three outcome buttons (a team, or the central Draw option). */
+/**
+ * One of the three outcome buttons (a team, or the central Draw option).
+ *
+ * Three visual states, kept deliberately separate so a settled card is
+ * unambiguous (the reason for the flagged→isWinner/isUserPick split):
+ *   - `selected` — the live pre-pick highlight while betting (green fill/border).
+ *   - `isWinner` — a settled winning outcome (green fill + "Winner ✓"). On a
+ *     knockout decided in ET/pens BOTH the advancer and 'draw' are winners.
+ *   - `isUserPick` — the visitor's own pick, marked with a neutral "Your pick"
+ *     chip + a subtle ring but NO green. A losing pick therefore never looks
+ *     green; a pick that also won shows the green winner styling AND the chip.
+ */
 function OutcomeButton({
   kind,
   teamName,
   selected,
-  flagged,
   isWinner,
+  isUserPick,
   disabled,
   onClick,
 }: {
   kind: "team" | "draw";
   teamName?: string;
   selected: boolean;
-  flagged: boolean;
   isWinner: boolean;
+  isUserPick: boolean;
   disabled: boolean;
   onClick: () => void;
 }) {
-  const highlighted = selected || flagged;
+  // Green is reserved for winners / the live selection. The user's own pick
+  // gets a neutral treatment so it's distinct from (and never mistaken for) a
+  // winning outcome.
+  const green = selected || isWinner;
   const canPick = !disabled;
 
   return (
@@ -328,12 +364,20 @@ function OutcomeButton({
       onClick={onClick}
       disabled={disabled}
       style={{
-        background: highlighted ? "var(--green-bg)" : "var(--surface-2)",
-        borderColor: selected ? "var(--green)" : flagged ? "var(--green-dim)" : "var(--line)",
-        color: highlighted ? "var(--green-text)" : "var(--foreground)",
+        background: green ? "var(--green-bg)" : "var(--surface-2)",
+        borderColor: selected
+          ? "var(--green)"
+          : isWinner
+            ? "var(--green-dim)"
+            : isUserPick
+              ? "var(--muted)"
+              : "var(--line)",
+        color: green ? "var(--green-text)" : "var(--foreground)",
       }}
       className={[
         "min-w-0 flex-1 rounded-xl border-[1.5px] p-[14px_10px_12px] text-left transition-all duration-150 disabled:cursor-default",
+        // A non-winning pick still stands out via a subtle neutral ring.
+        isUserPick && !isWinner ? "ring-2 ring-[var(--muted)]" : "",
         canPick ? "cursor-pointer hover:-translate-y-0.5 hover:shadow-md" : "",
       ].join(" ")}
     >
@@ -347,6 +391,13 @@ function OutcomeButton({
       </div>
       {isWinner && (
         <div className="mt-[5px] text-[11px] font-semibold text-[var(--green)]">Winner ✓</div>
+      )}
+      {isUserPick && (
+        <div className="mt-[5px]">
+          <span className="inline-block rounded-full border border-[var(--line)] bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--muted)]">
+            Your pick
+          </span>
+        </div>
       )}
     </button>
   );
