@@ -318,6 +318,15 @@ start on these without being asked.
   baseline is 15 for ft_winner else 10) and `StatsBet`/`/stats` carry `ft_winner`
   now. **Manual step:** apply `20260701000000_ft_winner_pick.sql` (adds the
   column + constraint + trigger/RPC changes).
+- Match scores + pick/winner separation (2026-07-01) — `/matches` Past tab now
+  shows the real score ("2 – 1" + "(a.e.t.)"/"pens" note) via new display-only
+  `matches` columns (`ft_/et_/p_team1`/`2`, migration `20260702000000_match_scores.sql`)
+  parsed from the feed's `score.ft/et/p`. These are never graded and are excluded
+  from `/api/sync`'s result "freeze" (so they update every sync + backfill settled
+  matches). Also split `OutcomeButton`'s `flagged` into `isWinner`/`isUserPick`:
+  green = winner/selection only, the user's pick gets a neutral "Your pick" chip
+  (fixes a.e.t. knockouts where pick+draw+advancer all looked green). **Manual:**
+  apply migration, then run `/api/sync` once to backfill scores.
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.
