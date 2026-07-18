@@ -1174,3 +1174,84 @@ Same server-compute → client-switch pattern as `/leaderboard`:
   logged-in **You** path is pure, type-checked code sharing the same formulas
   (couldn't be exercised headlessly without a Supabase session cookie).
 - Pushed to `main` by the owner.
+
+> Note: the 2026-06-30 knockout draw-pick fix (PR1), the 2026-06-30 "wins in 90′"
+> bet mode (PR2), and the 2026-07-01 match-scores change were documented in
+> `CLAUDE.md` ("Status") but never written up here. That gap is left as-is rather
+> than reconstructed after the fact — `CLAUDE.md` is the accurate record for those
+> three.
+
+## Post-v1 — orphaned placeholder matches deleted (2026-07-18)
+
+Data fix only — **no application code changed** this session. The artifact is one
+new script, `supabase/scripts/delete_orphan_placeholder_matches.sql` (kept as the
+record of the edit, same convention as `resettle_knockout_matches.sql`).
+
+### The symptom
+`/matches` showed **four** cards for what should have been the last two fixtures.
+Two were real (France vs England for third place, Spain vs Argentina for the
+final); the other two showed bracket placeholders — "L101 vs L102" and
+"W101 vs W102" — which read to a human as "the losers/winners of the two
+semifinals will play here", i.e. matches that looked undecided even though the
+bracket was fully resolved.
+
+### The cause
+`buildExternalRef()` (`src/lib/openfootball.ts`) picks its dedupe key based on
+whether the feed entry has a `num` field:
+
+- with `num`   → `wc2026-m{num}`
+- without      → `{date}-{team1}-{team2}` (slugified)
+
+openfootball originally published the third-place and final matches **without a
+`num`**, using placeholder team names. They synced in under the name-based key:
+
+    2026-07-18-l101-l102   (third place)
+    2026-07-19-w101-w102   (final)
+
+openfootball later added `num: 103` / `num: 104` and the resolved team names. The
+next sync then took the *num* branch and **inserted new rows** (`wc2026-m103`,
+`wc2026-m104`) instead of updating the old ones. The two placeholder rows were now
+orphaned: no feed entry matches their external_ref, so they were never updated,
+would never receive a result, and would never settle — yet they remained
+`status='scheduled'` with a future `kickoff_at`, which is precisely the condition
+`/matches` uses for "bettable". So they rendered as live, predictable cards.
+
+Only these two fixtures were affected; every R32/R16/QF/SF row is cleanly keyed
+`wc2026-m##` because those already carried a `num` on their first sync.
+
+### Impact assessment (why the cleanup was safe)
+One real prediction had been placed on the ghost third-place card
+(`pick='team1'`, `ft_winner=true`, `outcome=NULL`, `points_awarded=0`). It could
+never settle. Checking where it actually counted:
+
+- `accuracy` view and `/stats` both filter `WHERE outcome IN ('won','lost')` →
+  the bet was **already excluded** from points, bets_placed, correct/wrong, win%,
+  and streak. So the leaderboard was never skewed by it.
+- `match_bet_counts` counts every pick regardless of outcome → it *was* the
+  crowd-split % shown on the ghost card, which disappears with the card.
+
+The affected player also already held a normal prediction on the real
+France vs England row (and on the final), so deleting the ghost cost them nothing
+they had meant to bet on. Because `bets.match_id` is
+`REFERENCES public.matches(id) ON DELETE CASCADE`, deleting the two match rows
+removed the ghost bet automatically — no separate bet delete was needed.
+
+### The fix
+Deleted the two rows, matched on their two exact `external_ref` values rather than
+a `LIKE` pattern so a real fixture could never be swept up.
+
+### Verification (after)
+- knockout rows: **32** (16 R32 + 8 R16 + 4 QF + 2 SF + 1 third place + 1 final)
+- total match rows: **104** — exactly the feed's 104
+- remaining knockout rows not matching `^wc2026-m\d+$`: **0** (no other orphans of
+  this kind anywhere in the table)
+- third-place/final rows remaining: just `wc2026-m103` + `wc2026-m104`
+- affected player's `points_balance`: **365, unchanged**; their 2 unsettled bets
+  are the two real upcoming fixtures
+
+### Not done (deliberate)
+No automatic guard against this class of orphan (e.g. having `/api/sync` flag or
+delete matches whose `external_ref` is absent from the current feed). With the
+final the day after this fix, no remaining fixture could hit the bug, and
+sync-time deletion logic carries more risk than the problem it would prevent.
+Recorded as a v3 idea in `docs/PLAN.md` instead.

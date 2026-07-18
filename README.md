@@ -265,10 +265,11 @@ the 48 real WC2026 country names (as they appear in openfootball's
 themselves live in `public/flags/` (copied from the `flag-icons` npm package
 by `scripts/copy-flags.mjs`, which is also how to add a flag later). The
 `Flag` component (`src/components/flag.tsx`) renders nothing for team names
-not in the map — currently just the ~64 unresolved knockout-bracket
-placeholders (`"1A"`, `"W74"`, etc.), which get real country names as the
-bracket plays out. If a placeholder resolves to a country not yet in
-`TEAM_FLAG_CODES`, add it there and re-run the copy script.
+not in the map — that covered the knockout-bracket placeholders (`"1A"`,
+`"W74"`, etc.), which get real country names as the bracket plays out. As of
+2026-07-18 the bracket is fully resolved, so every match row now carries real
+country names and no placeholders remain. If a placeholder ever resolves to a
+country not yet in `TEAM_FLAG_CODES`, add it there and re-run the copy script.
 
 ### Daily login bonus (disabled)
 

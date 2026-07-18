@@ -105,3 +105,13 @@ game is extended. Don't start on any of these without being asked.
   ("Status") and `docs/HISTORY.md`.
 - **Real bookmaker odds** — listed in "Deferred (not v1)" above but intentionally
   permanent: the fixed-points model removes the need, so this stays out of scope.
+- **Guard against orphaned match rows.** `buildExternalRef` keys a match by
+  `wc2026-m{num}` or, if the feed gives no `num`, by `{date}-{team1}-{team2}`. If
+  openfootball later adds a `num` to a match that lacked one, the key changes and the
+  next sync inserts a new row while the old one is orphaned — never updated, never
+  settled, but still `scheduled` and therefore *bettable*. This actually happened to
+  the third-place match and the final (fixed 2026-07-18 by deleting the two rows; see
+  `docs/HISTORY.md`). If this codebase is ever reused for another tournament, decide
+  up front how to handle it: simplest is a sync-time report of any match row whose
+  `external_ref` no longer appears in the feed (report, don't auto-delete — deleting
+  cascades to bets). Not worth building for WC2026, which ended immediately after.

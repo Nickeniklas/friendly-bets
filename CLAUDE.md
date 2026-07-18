@@ -5,7 +5,7 @@ For a step-by-step account of how v1 was built (including bugs found and fixed a
 way), see `docs/HISTORY.md` — that detail has been moved out of this file to keep this
 brief current and short.
 
-## Status (as of 2026-06-29)
+## Status (as of 2026-07-18)
 **v2 is complete and live** at `https://friendly-bets-rust.vercel.app`. All of
 `docs/PLAN.md`'s build order (steps 1-8) is DONE:
 
@@ -327,6 +327,26 @@ start on these without being asked.
   green = winner/selection only, the user's pick gets a neutral "Your pick" chip
   (fixes a.e.t. knockouts where pick+draw+advancer all looked green). **Manual:**
   apply migration, then run `/api/sync` once to backfill scores.
+- Orphaned placeholder matches deleted (2026-07-18) — **data fix only, no code
+  change.** `/matches` was showing FOUR cards for the last two fixtures: the real
+  `wc2026-m103` (France vs England) and `wc2026-m104` (Spain vs Argentina), plus
+  two ghost cards "L101 vs L102" and "W101 vs W102". Cause: `buildExternalRef`
+  keys a match by `wc2026-m{num}` if the feed gives it a `num`, else by
+  `{date}-{team1}-{team2}`. openfootball originally listed the third-place and
+  final matches with NO `num` and bracket-placeholder team names, so they synced
+  in as `2026-07-18-l101-l102` / `2026-07-19-w101-w102`; when the feed later added
+  `num: 103`/`104` + real names, the sync inserted NEW rows under the num key and
+  the old ones were orphaned (never matched by the feed again → never updated,
+  never settled, but still `status='scheduled'` with a future kickoff, so they
+  rendered as bettable cards). Fixed by deleting the two rows via
+  `supabase/scripts/delete_orphan_placeholder_matches.sql`; the one prediction
+  sitting on the ghost third-place card went with it via `bets.match_id`'s ON
+  DELETE CASCADE. **No scoreboard impact** — that bet had `outcome = NULL`, and
+  both the `accuracy` view and `/stats` filter to `outcome IN ('won','lost')`, so
+  it was never counted in points/win%/streak; it only fed `match_bet_counts` (the
+  crowd-split % on the ghost card itself). Verified after: 32 knockout rows, 104
+  total match rows (= the feed exactly), 0 remaining non-num-keyed knockout rows,
+  affected player's balance unchanged. See the "dual keying" gotcha below.
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.
@@ -549,6 +569,18 @@ step-by-step build log:
   `{date}-{team1}-{team2}` slugified. Knockout team1/team2 start as placeholders
   ("2A", "W74") that get overwritten as the bracket resolves — keying on team names
   there would create duplicate rows on re-sync, hence the num-based key for knockouts.
+- **That dual keying can orphan rows** (bit us 2026-07-18, see Status). The branch
+  taken depends on whether the feed supplies `num` *at the moment of that sync* — so
+  if openfootball later ADDS a `num` to a match that previously had none, its
+  external_ref changes, and the next sync inserts a brand-new row while the old one
+  becomes an orphan: nothing in the feed matches it again, so it's never updated and
+  never settles, yet it stays `status='scheduled'` and renders as a live, *bettable*
+  card with placeholder team names. That's exactly how the ghost "L101 vs L102" /
+  "W101 vs W102" cards appeared for the third-place match + final. If odd/duplicate
+  fixtures ever show up again, the check is: any knockout row whose `external_ref`
+  doesn't match `^wc2026-m\d+$` is a suspect orphan. Cleanup = delete the row (bets
+  cascade). No automatic guard exists — deliberately, since the tournament ended
+  before one was worth the risk; see `docs/PLAN.md` v3 ideas.
 - Don't re-deduct loser stakes at settlement; they were taken at placement.
 - accuracy is a derived VIEW, not a stored table — keeps it from drifting.
 - RLS policies alone aren't enough — Postgres also requires baseline table GRANTs
