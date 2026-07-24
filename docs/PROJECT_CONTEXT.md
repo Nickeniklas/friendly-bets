@@ -5,10 +5,11 @@ Self-contained summary — paste into Claude project knowledge so fresh chats st
 ## Project
 A fun, non-commercial prediction game for family & friends (~10–50 people), for the
 2026 FIFA World Cup. No real money, ever. Live at
-`https://friendly-bets-rust.vercel.app`. **v2 is complete and live** — view matches,
-predict home/draw/away, leaderboard with period selector, and a stats tab. Built by an
-owner who is new to Next.js and has no football knowledge (which is exactly why the
-scoring design needs no oddsmaking).
+`https://friendly-bets-rust.vercel.app`. **v2 is complete and live**, and the
+tournament itself has now finished (the final was 2026-07-19). View matches,
+predict home/draw/away, a leaderboard with a period selector, and a stats tab.
+Built by an owner who is new to Next.js and has no football knowledge (which is
+exactly why the scoring design needs no oddsmaking).
 
 ## Stack (settled — do not re-litigate)
 - Next.js (App Router, TypeScript) on Vercel, auto-deploy on push to `main`
@@ -65,6 +66,8 @@ scoring design needs no oddsmaking).
   columns remain dormant in the DB, EXECUTE grant revoked from all client roles.
 - `result_ft` column (2026-06-30) fixes knockout draw picks: openfootball stores the
   advancer as `result`, so 90-min draws were wrongly graded as losses before.
+- Match-score columns (`ft_/et_/p_team1`/`2`, 2026-07-01) are display-only, never
+  graded, and excluded from the sync's result "freeze" so they backfill on every sync.
 
 ## Build context
 - Building in VS Code with Claude Code; conversations with Claude are planning
@@ -77,10 +80,19 @@ scoring design needs no oddsmaking).
 - No test suite — verify with `npx tsc --noEmit` + eslint.
 
 ## Open items
-- None. No known open bugs; v2 is feature-complete.
+- None. No known open bugs; v2 is feature-complete and the tournament has ended.
 
 ## v3 ideas (backlog — don't start without being asked)
 - Live in-match scores/stats (needs a different data source than openfootball).
 - Knockout-bracket-specific logic (predict who advances, bracket-wide scoring).
 - Crowd facts in `/stats` still key off `result` (advancer) not `result_ft` — known
   minor inconsistency, deliberately left.
+- Guard against orphaned match rows from `buildExternalRef`'s dual keying. If
+  openfootball adds a `num` to a match that previously had none, the external_ref
+  changes and the next sync inserts a new row while the old one is orphaned — never
+  updated, never settled, but still `scheduled` and therefore bettable. This bit the
+  third-place match and final (ghost "L101 vs L102" / "W101 vs W102" cards, deleted
+  2026-07-18). Simplest fix if this codebase is reused: a sync-time report of any
+  match row whose `external_ref` no longer appears in the feed (report, don't
+  auto-delete — deleting cascades to bets). Not worth building for WC2026, which has
+  ended.
