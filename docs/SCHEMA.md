@@ -161,6 +161,11 @@ anymore.
   (so the crowd split is visible).
 - `matches`: read for all; writes only by the sync job / admin (service role).
 - Settlement runs as a `security definer` RPC so normal users can't touch balances.
+- Views: `accuracy` and `match_bet_counts` are `security_invoker` views (since
+  2026-09-18, `20260918000000_views_security_invoker.sql`) — they run with the
+  *caller's* grants + RLS, not the view owner's. They stay publicly readable because
+  their underlying tables (`bets`, `profiles`) are. Any future view must be created
+  `WITH (security_invoker = on)`.
 
 Implementation note: RLS policies alone aren't sufficient — Postgres also requires
 baseline table GRANTs for `anon`/`authenticated`/`service_role` (a separate permission

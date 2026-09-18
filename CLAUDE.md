@@ -5,7 +5,7 @@ For a step-by-step account of how v1 was built (including bugs found and fixed a
 way), see `docs/HISTORY.md` — that detail has been moved out of this file to keep this
 brief current and short.
 
-## Status (as of 2026-07-18)
+## Status (as of 2026-09-18)
 **v2 is complete and live** at `https://friendly-bets-rust.vercel.app`. All of
 `docs/PLAN.md`'s build order (steps 1-8) is DONE:
 
@@ -347,6 +347,15 @@ start on these without being asked.
   crowd-split % on the ghost card itself). Verified after: 32 knockout rows, 104
   total match rows (= the feed exactly), 0 remaining non-num-keyed knockout rows,
   affected player's balance unchanged. See the "dual keying" gotcha below.
+- Views switched to `security_invoker` (2026-09-18) — the Supabase Security
+  Advisor flagged `accuracy` and `match_bet_counts` as CRITICAL "Security Definer
+  View" (views run as their owner by default, bypassing RLS on the underlying
+  tables). Nothing leaked — both only read `bets`/`profiles`, which are already
+  public-read — but migration `20260918000000_views_security_invoker.sql` now sets
+  `security_invoker = on` on both, so they respect the caller's grants + RLS. No
+  app code change. Verified logged out: anon sees the same row counts as service
+  role, and `/matches`, `/leaderboard`, `/stats` render real data with no errors.
+  See the "views" gotcha below.
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.
@@ -583,6 +592,12 @@ step-by-step build log:
   before one was worth the risk; see `docs/PLAN.md` v3 ideas.
 - Don't re-deduct loser stakes at settlement; they were taken at placement.
 - accuracy is a derived VIEW, not a stored table — keeps it from drifting.
+- New views default to security definer (they run as the view owner, bypassing
+  RLS) and trigger the Supabase Advisor's "Security Definer View" warning. Always
+  create them `WITH (security_invoker = on)`, and make sure every table they read
+  has anon/authenticated SELECT grants + RLS policies, or guests get "permission
+  denied" / fewer rows. `CREATE OR REPLACE VIEW` without the option can drop the
+  setting — repeat `WITH (security_invoker = on)` whenever you redefine a view.
 - RLS policies alone aren't enough — Postgres also requires baseline table GRANTs
   for anon/authenticated/service_role (a separate permission layer checked *before*
   RLS; service_role's BYPASSRLS doesn't skip it). Tables created via `supabase db push`

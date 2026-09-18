@@ -1255,3 +1255,40 @@ delete matches whose `external_ref` is absent from the current feed). With the
 final the day after this fix, no remaining fixture could hit the bug, and
 sync-time deletion logic carries more risk than the problem it would prevent.
 Recorded as a v3 idea in `docs/PLAN.md` instead.
+
+## Post-v1 — views switched to security_invoker (2026-09-18)
+
+Migration only — **no application code changed**. New migration:
+`supabase/migrations/20260918000000_views_security_invoker.sql`.
+
+### What the advisor flagged
+The Supabase Security Advisor reported `public.accuracy` and
+`public.match_bet_counts` as CRITICAL "Security Definer View". By default a
+Postgres view runs with its *owner's* permissions, so RLS on the tables it reads
+is bypassed for whoever queries the view.
+
+### Why the real risk was low
+Both views only read `bets` (+ `profiles` for `accuracy`), and those tables are
+already fully public: `anon`/`authenticated` have SELECT grants
+(`20260610120000_grants.sql`) and `"read all" USING (true)` RLS policies (initial
+schema). So the views exposed nothing a guest couldn't already query directly.
+Checked before changing anything, since with `security_invoker` a missing grant
+or policy would have made the views error or return fewer rows for guests.
+
+### The fix
+`ALTER VIEW ... SET (security_invoker = on)` on both views, so they respect the
+caller's grants + RLS. Applied with `npx supabase db push` (a dry run first showed
+it was the only pending migration). Future views should be created
+`WITH (security_invoker = on)`; a `CREATE OR REPLACE VIEW` without the option can
+drop it.
+
+### Verification
+- `pg_class.reloptions` shows `security_invoker=on` for both (they're the only
+  views in `public`).
+- PostgREST as `anon` vs service role: `accuracy` 8 rows each,
+  `match_bet_counts` 103 rows each, all HTTP 200.
+- Dev server, no session cookie: `/matches`, `/leaderboard`, `/stats` all 200.
+  103 of 104 match cards carry crowd-split data (the one without has no
+  predictions), the leaderboard table lists all 10 players, and `/stats` renders
+  its Crowd + Records sections. No "permission denied" or other errors in the
+  server log.
