@@ -245,3 +245,6 @@ next-env.d.ts
 # env files — keep .env*.local out of git, but allow committed examples
 .env*.local
 !.env*.local.example
+
+# Local Supabase DB dumps — contain auth.users + all app data, never commit
+/backups/
