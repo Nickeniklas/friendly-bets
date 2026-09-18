@@ -11,7 +11,7 @@ Extra game data per user. Supabase Auth owns `auth.users`; this hangs off it.
 |---|---|---|
 | id | uuid (PK) | = auth.users.id |
 | display_name | text | shown on leaderboard |
-| points_balance | int | running points total; starts at 0, may go negative |
+| points_balance | int | running points total across ALL competitions; starts at 0, may go negative. Still written by `settle_match`, but no page displays it since 2026-09-18 — standings are per-competition sums of `bets.points_awarded` |
 | created_at | timestamptz | default now() |
 | last_bonus_date | date | null until first claim; UTC date of last daily-bonus claim |
 | streak_count | int | consecutive daily-bonus claims, capped at 7; default 0 |
@@ -21,21 +21,47 @@ is a running total of points earned/lost at settlement — it is no longer a wal
 stakable points, and is allowed to go negative. (`last_bonus_date` / `streak_count`
 belong to the daily login bonus, which is disabled as of 2026-06-16 — see below.)
 
+### `competitions` (2026-09-18)
+One row per league/tournament season. Read-all RLS + SELECT grant to
+`anon`/`authenticated`; only `service_role` writes. Migration
+`20260918120000_competitions.sql`.
+
+| column | type | notes |
+|---|---|---|
+| id | text (PK) | `wc2026`, `liiga-2027` |
+| name | text | display name, e.g. "Liiga 2026–27" |
+| sport | text | `football` / `hockey` — drives sport-specific display (OT/SO labels, icon) |
+| is_active | bool | currently running: default selection + /matches ±14-day window |
+| sort_order | int | dropdown order, lowest first |
+
+The UI's selected competition is a cookie (`fb-competition`), resolved by
+`getSelectedCompetition()` in `src/lib/competitions.ts` (unknown ids fall back to the
+first active competition by `sort_order`).
+
 ### `matches`
-One row per game, synced from openfootball.
+One row per game, synced by `/api/sync` (Liiga from liiga.fi; the WC rows came from
+openfootball and are frozen).
 
 | column | type | notes |
 |---|---|---|
 | id | uuid (PK) | |
-| external_ref | text (unique) | stable key from openfootball to dedupe on re-sync |
-| team1 | text | |
-| team2 | text | |
+| external_ref | text (unique) | stable key from the feed to dedupe on re-sync |
+| competition | text (FK→competitions, NOT NULL) | `wc2026` / `liiga-2027`; no default — the sync must set it |
+| team1 | text | home team |
+| team2 | text | away team |
 | kickoff_at | timestamptz | betting closes at this time |
-| group_label | text | e.g. "Group A" |
-| stage | text | group / r32 / r16 / qf / sf / final |
+| group_label | text | e.g. "Group A" (WC), "Week 3" (Liiga) |
+| stage | text | WC: group / r32 / r16 / qf / sf / third_place / final; leagues: `regular` |
 | status | text | `scheduled` → `closed` → `settled` |
 | result | text | `team1` / `team2` / `draw` / null until played |
+| result_ft | text | full-time result (WC: 90-min; hockey: 60-min = same as `result`) |
+| ft_/et_/p_team1, ft_/et_/p_team2 | int | display-only scores (never graded): WC 90′/after ET/pens; hockey regulation/after OT/shootout period |
 | settled_at | timestamptz | null until settled |
+
+**Liiga** (`src/lib/liiga.ts`): `external_ref = liiga-{id}` (the API's numeric game
+id — stable, single keying, so no orphan risk). Graded on the regulation (60-min)
+score = sum of `NORMAL` periods; `result = result_ft` = that outcome, set only when
+`ended`. `et_*` is set only if `finishedType` shows OT/SO, `p_*` only for a shootout.
 
 `external_ref`: openfootball doesn't ship a clean id, so build one deterministically
 and upsert on it so re-syncs update rows instead of duplicating them.
@@ -158,7 +184,11 @@ anymore.
   it too, but its EXECUTE grant was revoked on 2026-06-17, so `settle_match` is now the
   only path that touches a balance.
 - `bets`: a user inserts only their own (and only on a bettable match); reads all
-  (so the crowd split is visible).
+  (so the crowd split is visible). The `enforce_bet_window` trigger
+  (`check_bet_bettable()`) also rejects `ft_winner = true` unless the match's stage is
+  a WC knockout stage (r32/r16/qf/sf/third_place/final) — an allow-list since
+  2026-09-18, so Liiga's `regular` stage is rejected too.
+- `competitions`: read for all; writes only by service role.
 - `matches`: read for all; writes only by the sync job / admin (service role).
 - Settlement runs as a `security definer` RPC so normal users can't touch balances.
 - Views: `accuracy` and `match_bet_counts` are `security_invoker` views (since

@@ -3,18 +3,22 @@
 Self-contained summary — paste into Claude project knowledge so fresh chats start informed.
 
 ## Project
-A fun, non-commercial prediction game for family & friends (~10–50 people), for the
-2026 FIFA World Cup. No real money, ever. Live at
-`https://friendly-bets-rust.vercel.app`. **v2 is complete and live**, and the
-tournament itself has now finished (the final was 2026-07-19). View matches,
-predict home/draw/away, a leaderboard with a period selector, and a stats tab.
+A fun, non-commercial prediction game for family & friends (~10–50 people). Built for
+the 2026 FIFA World Cup (finished 2026-07-19); since 2026-09-18 the active
+competition is the **Finnish Liiga 2026–27 regular season** (ice hockey), with the
+World Cup still browsable via a header dropdown. No real money, ever. Live at
+`https://friendly-bets-rust.vercel.app`. View matches, predict home/draw/away, a
+leaderboard with a period selector, and a stats tab — all scoped to the selected
+competition.
 Built by an owner who is new to Next.js and has no football knowledge (which is
 exactly why the scoring design needs no oddsmaking).
 
 ## Stack (settled — do not re-litigate)
 - Next.js (App Router, TypeScript) on Vercel, auto-deploy on push to `main`
 - Supabase — Postgres + Auth (magic link via Brevo SMTP + Google OAuth) + realtime
-- openfootball worldcup.json for fixtures + results (free, no API key)
+- Match data: liiga.fi's public site API for Liiga (`/api/v2/games`, unofficial, no
+  key — one request per sync). openfootball worldcup.json was the WC source; it's no
+  longer fetched (WC rows are frozen) but the parser is kept.
 - No odds — a fixed-points scoring model (see below)
 - Sync + settlement run together in a protected `/api/sync` route, triggered **every
   5 minutes** by cron-job.org (Vercel Hobby cron is once-daily only, so the schedule
@@ -37,6 +41,22 @@ exactly why the scoring design needs no oddsmaking).
   ago, not yet settled. `settle_match` is atomic, idempotent, and the ONLY path that
   changes a balance.
 - A separate accuracy view tracks bets placed / correct / wrong / win rate % / streak.
+- **Hockey (Liiga)** is graded on the **60-minute (regulation) result** — standard
+  hockey 1X2. A game tied after three periods is a `draw` even if won in OT/shootout
+  (the parser sets `result = result_ft` = regulation outcome, so `settle_match` is
+  unchanged). No "wins in 90′" mode for hockey.
+
+## Competitions
+- `competitions` table (`id`, `name`, `sport`, `is_active`, `sort_order`); every
+  `matches` row has a `competition`. Seeded: `liiga-2027` (hockey, active) and
+  `wc2026` (football, inactive).
+- Selection lives in the `fb-competition` cookie (header dropdown → server action →
+  `router.refresh()`), falling back to the first active competition by sort_order.
+- `/matches`, `/leaderboard`, `/stats` filter everything by the selected competition.
+  Standings are derived from that competition's settled bets —
+  `profiles.points_balance` is now a cross-competition total that nothing displays.
+- Sport-specific display (⚽/🏒 icon, OT/SO vs a.e.t./pens) keys off `sport`, never the
+  id. Adding e.g. NHL = one `competitions` row + a parser + a feed entry in `/api/sync`.
 
 ## Auth
 - Magic link (`/login` → `/auth/confirm`, custom SMTP via Brevo — Supabase's shared
@@ -47,8 +67,10 @@ exactly why the scoring design needs no oddsmaking).
 
 ## Pages
 - `/matches` — Upcoming/Live/Past tabs, date-grouped ("washi tape" banners), Finnish
-  kickoff times, team flags, three-way pick with crowd-split %, real scores on Past
-  (incl. a.e.t./pens), mobile-first design, dark/light toggle (app-wide, default dark).
+  kickoff times, team flags (WC only), three-way pick with crowd-split %, real scores
+  on Past (a.e.t./pens for football, OT/SO for hockey), mobile-first design,
+  dark/light toggle (app-wide, default dark). For an active competition Upcoming/Past
+  only show ±14 days.
 - `/leaderboard` — top-3 podium + one sortable all-players table, with a period
   selector: All time / Last 10 / one pill per settled tournament round.
 - `/stats` — You (login-gated personal stats) / The Crowd / Records sections, all
@@ -80,9 +102,12 @@ exactly why the scoring design needs no oddsmaking).
 - No test suite — verify with `npx tsc --noEmit` + eslint.
 
 ## Open items
-- None. No known open bugs; v2 is feature-complete and the tournament has ended.
+- None known. Liiga support shipped 2026-09-18 (see CLAUDE.md Status).
 
 ## v3 ideas (backlog — don't start without being asked)
+- Liiga playoffs (series format — not yet looked at), NHL.
+- Stage-based stats in `/stats` are WC-shaped (e.g. "accuracy by stage" is a single
+  "Regular season" bar for Liiga); a per-week breakdown would suit leagues better.
 - Live in-match scores/stats (needs a different data source than openfootball).
 - Knockout-bracket-specific logic (predict who advances, bracket-wide scoring).
 - Crowd facts in `/stats` still key off `result` (advancer) not `result_ft` — known

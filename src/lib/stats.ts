@@ -12,7 +12,8 @@
 export type Pick = "team1" | "draw" | "team2";
 
 // Display names + canonical order for tournament rounds (codes from
-// `mapStage()` in src/lib/openfootball.ts). Shared with the leaderboard.
+// `mapStage()` in src/lib/openfootball.ts, plus 'regular' for league regular
+// seasons from src/lib/liiga.ts). Shared with the leaderboard.
 export const STAGE_LABELS: Record<string, string> = {
   group: "Group stage",
   r32: "Round of 32",
@@ -21,8 +22,9 @@ export const STAGE_LABELS: Record<string, string> = {
   sf: "Semi-finals",
   third_place: "Third place",
   final: "Final",
+  regular: "Regular season",
 };
-export const STAGE_ORDER = ["group", "r32", "r16", "qf", "sf", "third_place", "final"];
+export const STAGE_ORDER = ["group", "r32", "r16", "qf", "sf", "third_place", "final", "regular"];
 
 /**
  * Pull the single embedded row out of a Supabase to-one relation, whether it

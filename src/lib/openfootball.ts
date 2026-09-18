@@ -46,6 +46,8 @@ interface OpenFootballData {
 /** A row shape ready to upsert into `public.matches` (keyed on external_ref). */
 export interface MatchRow {
   external_ref: string;
+  /** competitions.id this match belongs to (e.g. 'wc2026', 'liiga-2027'). */
+  competition: string;
   team1: string;
   team2: string;
   kickoff_at: string; // ISO timestamp
@@ -230,6 +232,7 @@ export function toMatchRow(match: OpenFootballMatch): MatchRow {
   const [p_team1, p_team2] = goals(match.score?.p);
   return {
     external_ref: buildExternalRef(match),
+    competition: "wc2026",
     team1: match.team1,
     team2: match.team2,
     kickoff_at: parseKickoffAt(match.date, match.time),

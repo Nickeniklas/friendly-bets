@@ -1292,3 +1292,75 @@ drop it.
   predictions), the leaderboard table lists all 10 players, and `/stats` renders
   its Crowd + Records sections. No "permission denied" or other errors in the
   server log.
+
+## Post-v1 — Liiga 2026–27 regular season + competition selector (2026-09-18)
+
+The World Cup is over; the Finnish Liiga regular season (started 2026-09-01) is now
+the active competition, with the same game (home/draw/away, +10 / +5 underdog / −5).
+New migration: `supabase/migrations/20260918120000_competitions.sql`.
+
+### Data source (verified 2026-09-18)
+`GET https://liiga.fi/api/v2/games?tournament=runkosarja&season=2027` — liiga.fi's
+own public site API (unofficial, no key). 544 games, all `serie = RUNKOSARJA`, 34
+ended at the time. Distinct `finishedType`: `ACTIVE_OR_NOT_STARTED`,
+`ENDED_DURING_REGULAR_GAME_TIME`, `ENDED_DURING_EXTENDED_GAME_TIME` (OT),
+`ENDED_DURING_WINNING_SHOT_COMPETITION` (shootout). `periods[]` always lists all five
+periods (3× NORMAL, OVERTIME, WINNING_SHOT_COMPETITION), zero-filled when unplayed —
+so OT/SO display keys off `finishedType`, not the periods. `homeTeam.goals` includes
+the decider: e.g. Sport–Jokerit regulation 4–4, SO period 1–0, goals 5–4.
+
+### Grading
+Standard hockey 1X2 on the 60-minute result: regulation score = sum of NORMAL
+periods, and `result = result_ft` = that outcome (only once `ended`). So a game tied
+after regulation grades as `draw` whoever wins OT/SO, and `settle_match` needed no
+change. The "wins in 90′" mode is WC-knockout-only: `isKnockout` on `/matches` used to
+be `stage !== 'group'` (which would have offered it on `regular`) and is now
+`isKnockoutStage()` (`KNOCKOUT_STAGES` in `src/lib/competitions.ts`); the
+`check_bet_bettable()` trigger's `stage = 'group'` rejection became an allow-list of
+the knockout stage codes.
+
+### Competition separation
+- `competitions` table + `matches.competition` FK (added with DEFAULT `'wc2026'` to
+  backfill, then the default dropped). Index on `(competition, kickoff_at)`.
+- Selection: `fb-competition` cookie; `getSelectedCompetition()` resolves it
+  server-side (unknown → first active by sort_order). Header dropdown
+  `src/components/competition-select.tsx` → server action
+  `src/lib/competition-actions.ts` (validates the id, sets the cookie) →
+  `router.refresh()`, with `useTransition` pending state. Rendered in `AppHeader`,
+  whose brand icon now follows the sport (⚽/🏒); the "Friendly Bets" wordmark hides
+  below the `sm` breakpoint to fit the dropdown on phones.
+- Every query on `/matches`, `/leaderboard`, `/stats` filters by competition (bets and
+  `match_bet_counts` via `matches!inner(competition)`).
+- Leaderboard "All time" is now aggregated from the competition's settled bets
+  (`buildStageRows` generalized into `buildRowsByKey`) plus zero rows for registered
+  players with no bets there — no longer `profiles.points_balance` + the `accuracy`
+  view, because the balance is a cross-competition total now. The `/matches` points
+  pill and `/stats` points/rank use the same per-competition sum. For the WC these
+  equal the old values (balances were reset to 0 at the V2 migration, and pre-V2 bets
+  carry `points_awarded = 0`).
+- `/matches` for an active competition loads only kickoffs within ±14 days
+  (`ACTIVE_WINDOW_DAYS`); the inactive WC still shows everything, as before.
+- Hockey display: "OT" / "x–y SO" score notes instead of "a.e.t." / "pens", and
+  "Draw after 60′" as the status of a regulation tie. `IntroCard` adds a 60-minute
+  rule step for hockey, with its own localStorage dismissal key
+  (`fb-intro-dismissed-hockey`) so players who closed the WC card still see it once.
+- "World Cup 2026" copy replaced: leaderboard subtitle and `/login` subtitle use the
+  selected competition's name; the home page + metadata description say "Sports
+  prediction game".
+- `STAGE_LABELS` (stats.ts + matches page) gained `regular` → "Regular season".
+
+### Sync
+New `src/lib/liiga.ts` (`fetchLiigaGames` / `toLiigaMatchRow`, mirrors
+openfootball.ts). `/api/sync` now iterates a `feeds` list (currently just Liiga);
+each feed is try/caught so a failure is logged, reported in the response as
+`feedErrors`, and skipped for that tick while settlement still runs. openfootball is
+no longer fetched (code kept; re-enable by adding a feed entry). `MatchRow` gained
+`competition`. The external_ref upsert and settled-result freeze apply unchanged.
+Games already played before the first sync insert as ended with no bets and just flip
+to `settled`.
+
+### Verification
+`npx tsc --noEmit` and `npx eslint src` clean. The Liiga parser was run against the
+real feed: regulation win → `team2`; SO game → `draw`, score 4–4 + "1–0 SO"; OT game →
+`draw`, score 2–1 + "OT"; unplayed → null result; all 544 external_refs unique.
+Not verified against a live DB in this session (migration not yet applied).

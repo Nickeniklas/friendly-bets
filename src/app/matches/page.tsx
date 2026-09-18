@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getSelectedCompetition, isKnockoutStage } from "@/lib/competitions";
 import { AppHeader } from "@/components/app-header";
 import { BottomNav } from "@/components/bottom-nav";
 import { IntroCard } from "./intro-card";
@@ -33,6 +34,11 @@ type Bet = {
   ft_winner: boolean;
 };
 
+// For a competition that's still running (competitions.is_active), Upcoming and
+// Past only show this many days either side of now — a full hockey regular
+// season is ~540 games. Finished competitions (the World Cup) show everything.
+const ACTIVE_WINDOW_DAYS = 14;
+
 // Count of bets per outcome on a match, used for the crowd-split display and
 // the underdog-bonus hint (an outcome under 33% of bets earns the bonus).
 type PickCounts = { team1: number; draw: number; team2: number };
@@ -48,6 +54,7 @@ const STAGE_LABELS: Record<string, string> = {
   sf: "Semi-final",
   third_place: "Third-place Play-off",
   final: "Final",
+  regular: "Regular season",
 };
 
 // Matches are stored in UTC (kickoff_at). We render times in Finnish time
@@ -93,7 +100,16 @@ function stageLabel(match: Match): string {
 function statusInfo(
   match: Match,
   bettable: boolean,
+  sport: string,
 ): { label: string; color: "muted" | "gold" } {
+  if (match.status === "settled" && sport === "hockey") {
+    // Hockey is graded on the 60-minute result (result = result_ft), so a game
+    // tied after regulation is a "Draw" even if it was won in OT/shootout —
+    // say so, since the score note below will show the OT/SO winner.
+    if (match.result === "team1") return { label: `${match.team1} won`, color: "muted" };
+    if (match.result === "team2") return { label: `${match.team2} won`, color: "muted" };
+    return { label: "Draw after 60′", color: "gold" };
+  }
   if (match.status === "settled") {
     // A knockout level after 90 minutes (result_ft === 'draw') but won on
     // extra time / penalties advanced one team — note "(a.e.t.)" so the label
@@ -116,8 +132,24 @@ function statusInfo(
 // matches stay note-less until the next /api/sync backfills their goals).
 type MatchScore = { home: number; away: number; note?: string };
 
-function matchScore(match: Match): MatchScore | undefined {
+function matchScore(match: Match, sport: string): MatchScore | undefined {
   if (match.status !== "settled") return undefined;
+
+  // Hockey: same headline rule (score after OT if it went there, else
+  // regulation), labelled "OT" / "SO" instead of "a.e.t." / "pens". et_* is
+  // only set by the Liiga parser when the game actually went to overtime.
+  if (sport === "hockey") {
+    const home = match.et_team1 ?? match.ft_team1;
+    const away = match.et_team2 ?? match.ft_team2;
+    if (home == null || away == null) return undefined;
+    let note: string | undefined;
+    if (match.p_team1 != null && match.p_team2 != null) {
+      note = `${match.p_team1}–${match.p_team2} SO`;
+    } else if (match.et_team1 != null) {
+      note = "OT";
+    }
+    return { home, away, note };
+  }
 
   // Prefer the extra-time aggregate as the headline when it exists (a knockout
   // that went to ET), otherwise the 90-minute score.
@@ -168,6 +200,7 @@ export default async function MatchesPage() {
   // eslint-disable-next-line react-hooks/purity
   const now = Date.now();
   const supabase = await createClient();
+  const { competition, competitions } = await getSelectedCompetition();
 
   const {
     data: { user },
@@ -178,14 +211,30 @@ export default async function MatchesPage() {
   // auth. The per-outcome bet counts come pre-aggregated from the
   // `match_bet_counts` view (one small row per match) rather than fetching and
   // tallying the whole bets table in JS.
+  //
+  // Everything is scoped to the selected competition. For an active one, only
+  // matches within ACTIVE_WINDOW_DAYS of now are loaded (that's what the
+  // Upcoming/Past windows show; Live matches kicked off minutes ago anyway).
+  let matchesQuery = supabase
+    .from("matches")
+    .select(
+      "id, team1, team2, kickoff_at, group_label, stage, status, result, result_ft, ft_team1, ft_team2, et_team1, et_team2, p_team1, p_team2",
+    )
+    .eq("competition", competition.id)
+    .order("kickoff_at", { ascending: true });
+  if (competition.is_active) {
+    const windowMs = ACTIVE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+    matchesQuery = matchesQuery
+      .gte("kickoff_at", new Date(now - windowMs).toISOString())
+      .lte("kickoff_at", new Date(now + windowMs).toISOString());
+  }
+
   const [{ data: matches, error }, { data: betCounts }] = await Promise.all([
+    matchesQuery,
     supabase
-      .from("matches")
-      .select(
-        "id, team1, team2, kickoff_at, group_label, stage, status, result, result_ft, ft_team1, ft_team2, et_team1, et_team2, p_team1, p_team2",
-      )
-      .order("kickoff_at", { ascending: true }),
-    supabase.from("match_bet_counts").select("match_id, team1, draw, team2"),
+      .from("match_bet_counts")
+      .select("match_id, team1, draw, team2, matches!inner(competition)")
+      .eq("matches.competition", competition.id),
   ]);
 
   if (error) {
@@ -208,28 +257,24 @@ export default async function MatchesPage() {
     });
   }
 
-  // For logged-in users, fetch their points balance (shown in the header) and
-  // any bets they've already placed, so we can show "your prediction" instead
-  // of a betting form.
+  // For logged-in users, fetch the bets they've placed in this competition, so
+  // we can show "your prediction" instead of a betting form, and sum their
+  // points for the header pill. (profiles.points_balance is a cross-competition
+  // running total now, so the pill uses this competition's bets instead.)
   let balance: number | null = null;
   const betsByMatch = new Map<string, Bet>();
 
   if (user) {
-    const [{ data: profile }, { data: bets }] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("points_balance")
-        .eq("id", user.id)
-        .single(),
-      supabase
-        .from("bets")
-        .select("match_id, pick, outcome, points_awarded, ft_winner")
-        .eq("user_id", user.id),
-    ]);
+    const { data: bets } = await supabase
+      .from("bets")
+      .select("match_id, pick, outcome, points_awarded, ft_winner, matches!inner(competition)")
+      .eq("user_id", user.id)
+      .eq("matches.competition", competition.id);
 
-    balance = profile?.points_balance ?? null;
+    balance = 0;
     for (const bet of bets ?? []) {
       betsByMatch.set(bet.match_id, bet);
+      balance += bet.points_awarded;
     }
   }
 
@@ -265,7 +310,7 @@ export default async function MatchesPage() {
   function renderMatchCard(match: Match) {
     const bettable =
       match.status === "scheduled" && new Date(match.kickoff_at).getTime() > now;
-    const { label, color } = statusInfo(match, bettable);
+    const { label, color } = statusInfo(match, bettable, competition.sport);
     const counts = countsByMatch.get(match.id) ?? { team1: 0, draw: 0, team2: 0 };
     const distribution: Distribution = {
       team1: counts.team1,
@@ -296,8 +341,8 @@ export default async function MatchesPage() {
         statusColor={color}
         homeName={match.team1}
         awayName={match.team2}
-        score={matchScore(match)}
-        isKnockout={match.stage !== "group"}
+        score={matchScore(match, competition.sport)}
+        isKnockout={isKnockoutStage(match.stage)}
         homeIsWinner={
           match.status === "settled" &&
           (match.result === "team1" || match.result_ft === "team1")
@@ -352,7 +397,7 @@ export default async function MatchesPage() {
   return (
     <div className="min-h-screen pb-[72px]">
       {/* Sticky header — points pill is the matches-specific right-side slot */}
-      <AppHeader loggedIn={!!user}>
+      <AppHeader loggedIn={!!user} competition={competition} competitions={competitions}>
         {user && (
           <div className="rounded-full bg-[var(--green-bg)] px-3 py-[5px] text-[13px] font-semibold text-[var(--green-text)]">
             {(balance ?? 0).toLocaleString()} pts
@@ -362,11 +407,13 @@ export default async function MatchesPage() {
 
       {/* Content */}
       <div className="mx-auto max-w-[600px] px-4 pt-4 pb-2">
-        <IntroCard />
+        <IntroCard sport={competition.sport} />
 
         {(matches ?? []).length === 0 ? (
           <p className="text-sm text-[var(--muted)]">
-            No matches yet — check back once the schedule has synced.
+            {competition.is_active
+              ? `No ${competition.name} matches in the next or last ${ACTIVE_WINDOW_DAYS} days.`
+              : "No matches yet — check back once the schedule has synced."}
           </p>
         ) : (
           <MatchesTabs

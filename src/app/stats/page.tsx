@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { AppHeader } from "@/components/app-header";
 import { BottomNav } from "@/components/bottom-nav";
 import { StatsView } from "@/components/stats-view";
+import { getSelectedCompetition } from "@/lib/competitions";
 import {
   related,
   computePersonalStats,
@@ -48,7 +49,7 @@ type CountRow = {
     | null;
 };
 
-type ProfileRow = { id: string; display_name: string | null; points_balance: number };
+type ProfileRow = { id: string; display_name: string | null };
 
 // ============================  shared UI bits  ==============================
 
@@ -388,8 +389,10 @@ function RecordsSection({ records }: { records: Records }) {
 export default async function StatsPage() {
   // RLS allows everyone (incl. guests) to read bets, matches and the crowd
   // view, so the Crowd + Records sections work logged-out; only the personal
-  // "You" section is gated below.
+  // "You" section is gated below. Everything is scoped to the selected
+  // competition (bets + crowd counts filtered on their match's competition).
   const supabase = await createClient();
+  const { competition, competitions } = await getSelectedCompetition();
 
   const [
     {
@@ -403,16 +406,15 @@ export default async function StatsPage() {
     supabase
       .from("bets")
       .select(
-        "user_id, pick, points_awarded, outcome, ft_winner, placed_at, matches!inner(id, stage, team1, team2, result, kickoff_at), profiles!inner(display_name)"
+        "user_id, pick, points_awarded, outcome, ft_winner, placed_at, matches!inner(id, stage, team1, team2, result, kickoff_at, competition), profiles!inner(display_name)"
       )
+      .eq("matches.competition", competition.id)
       .in("outcome", ["won", "lost"]),
     supabase
       .from("match_bet_counts")
-      .select("match_id, team1, draw, team2, matches!inner(result, team1, team2, stage)"),
-    supabase
-      .from("profiles")
-      .select("id, display_name, points_balance")
-      .order("points_balance", { ascending: false }),
+      .select("match_id, team1, draw, team2, matches!inner(result, team1, team2, stage, competition)")
+      .eq("matches.competition", competition.id),
+    supabase.from("profiles").select("id, display_name"),
   ]);
 
   if (betsError || countsError || profilesError) {
@@ -492,13 +494,21 @@ export default async function StatsPage() {
     youContent = <LoginCta />;
   } else {
     const myBets = bets.filter((b) => b.user_id === user.id);
-    const rank = Math.max(1, profiles.findIndex((p) => p.id === user.id) + 1);
-    const myProfile = profiles.find((p) => p.id === user.id);
+    // Points + rank within this competition (not profiles.points_balance,
+    // which is a cross-competition total). Rank = 1 + players strictly ahead;
+    // registered players with no bets here count as 0.
+    const pointsByUser = new Map<string, number>();
+    for (const b of bets) {
+      pointsByUser.set(b.user_id, (pointsByUser.get(b.user_id) ?? 0) + b.points_awarded);
+    }
+    const myPoints = pointsByUser.get(user.id) ?? 0;
+    const rank =
+      1 + profiles.filter((p) => (pointsByUser.get(p.id) ?? 0) > myPoints).length;
     const personal = computePersonalStats(
       myBets,
       rank,
       profiles.length,
-      myProfile?.points_balance ?? 0,
+      myPoints,
       crowdByMatch,
       field
     );
@@ -507,12 +517,12 @@ export default async function StatsPage() {
 
   return (
     <div className="min-h-screen pb-[72px]">
-      <AppHeader loggedIn={!!user} />
+      <AppHeader loggedIn={!!user} competition={competition} competitions={competitions} />
 
       <div className="mx-auto max-w-[600px] px-4 pt-5">
         <h1 className="mb-1 text-[26px] font-bold tracking-[-0.5px]">Stats</h1>
         <p className="mb-2 text-sm text-[var(--muted)]">
-          The numbers behind the predictions — yours and everyone’s.
+          {competition.name} — the numbers behind the predictions, yours and everyone’s.
         </p>
       </div>
 

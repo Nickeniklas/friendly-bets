@@ -11,7 +11,7 @@ const spaceGrotesk = Space_Grotesk({
 
 export const metadata: Metadata = {
   title: "Friendly Bets",
-  description: "World Cup 2026 prediction game for family & friends.",
+  description: "Sports prediction game for family & friends.",
 };
 
 export default function RootLayout({

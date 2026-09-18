@@ -7,7 +7,9 @@ brief current and short.
 
 ## Status (as of 2026-09-18)
 **v2 is complete and live** at `https://friendly-bets-rust.vercel.app`. All of
-`docs/PLAN.md`'s build order (steps 1-8) is DONE:
+`docs/PLAN.md`'s build order (steps 1-8) is DONE. **The active competition is now
+the Liiga 2026–27 regular season (ice hockey)**; the finished World Cup stays
+selectable — see the 2026-09-18 "Liiga" entry at the end of this list.
 
 > **2026-06-16 — model change: parimutuel → accuracy/points.** The staking/pool model
 > was replaced with a fixed-points prediction model (see "Scoring rules" below): no
@@ -356,6 +358,27 @@ start on these without being asked.
   app code change. Verified logged out: anon sees the same row counts as service
   role, and `/matches`, `/leaderboard`, `/stats` render real data with no errors.
   See the "views" gotcha below.
+- **Liiga 2026–27 + competition selector (2026-09-18)** — the app is now
+  multi-competition. Migration `20260918120000_competitions.sql`: new
+  `competitions` table (`id`, `name`, `sport`, `is_active`, `sort_order`; seeded
+  `liiga-2027` hockey active / `wc2026` football inactive), `matches.competition`
+  FK (WC rows backfilled), and the bet-window trigger's `ft_winner` check is now an
+  allow-list of WC knockout stages. The selected competition is the `fb-competition`
+  cookie (`getSelectedCompetition()` in `src/lib/competitions.ts`), switched by a
+  header dropdown (`src/components/competition-select.tsx` →
+  `src/lib/competition-actions.ts`). `/matches`, `/leaderboard`, `/stats` filter
+  everything by it; standings/points are summed from that competition's settled
+  bets — **`profiles.points_balance` is a cross-competition total now and is no
+  longer displayed anywhere** (settle_match still writes it). Liiga data comes from
+  `src/lib/liiga.ts` (liiga.fi's public `/api/v2/games`, `external_ref =
+  liiga-{id}`), graded on the **60-minute result** (`result = result_ft` =
+  regulation outcome, so a regulation tie is a `draw`; settle_match unchanged).
+  `/api/sync` now syncs a `feeds` list (just Liiga; openfootball no longer fetched,
+  code kept), and a failing feed is logged + skipped without failing the run. For an
+  active competition `/matches` shows ±14 days only. Hockey display keys off
+  `sport`: OT/SO score notes, "Draw after 60′", 🏒 icon, extra intro-card rule, no
+  "Win in 90′" (now `isKnockoutStage()`, not `stage !== 'group'`). **Manual:** apply
+  the migration, then trigger `/api/sync` once. See `docs/HISTORY.md`.
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.
@@ -484,7 +507,9 @@ instead of following OS preference:
   `src/app/layout.tsx` / `globals.css`), replacing the default Geist fonts.
 
 ## What we're building
-A non-commercial World Cup 2026 prediction game for family & friends. No real money.
+A non-commercial sports prediction game for family & friends — built for the World
+Cup 2026, now running the Liiga 2026–27 regular season (competition selector in the
+header). No real money.
 Players predict each match's outcome — **home win / draw / away win** (no stake) — and
 earn or lose points at settlement based on whether they were right and how the crowd bet
 (an underdog bonus). Everyone starts at 0 points; balances may go negative. A separate
@@ -493,7 +518,8 @@ accuracy leaderboard tracks raw prediction skill.
 ## Stack (decided — do not re-litigate without being asked)
 - Next.js on Vercel
 - Supabase: Postgres + Auth (magic link) + realtime
-- Match data: openfootball `worldcup.json` (free, no key), synced every 5
+- Match data: liiga.fi public API for Liiga (active); openfootball
+  `worldcup.json` for the finished WC (no longer fetched). Synced every 5
   minutes via cron-job.org → `/api/sync`
 - No odds — a fixed-points scoring model (see scoring rules below)
 
@@ -516,6 +542,8 @@ tricks. Explain non-obvious Next.js / Supabase choices inline.
   2026-06-30 PR2 Status entry.
 - **Wrong pick: −5 points.**
 - Balances may go negative — intended.
+- **Hockey:** graded on the 60-minute (regulation) result — a regulation tie is a
+  `draw` whatever happens in OT/shootout. No "wins in 90′" mode.
 
 ## Hard rules / invariants
 - A bet may be placed ONLY while match.status = 'scheduled' AND now() < kickoff_at.
@@ -560,6 +588,12 @@ step-by-step build log:
 8. Polish: crowd-split (% of picks per outcome) display on `/matches`
 
 ## Gotchas
+- Adding a competition (e.g. NHL): insert a `competitions` row, write a parser
+  in `src/lib` returning `MatchRow[]` (with `competition` set — the column has no
+  default), and add it to the `feeds` list in `/api/sync`. Pages need no change;
+  anything sport-specific must key off `competitions.sport`, never the id. Any new
+  query on `/matches`/`/leaderboard`/`/stats` must filter by the selected
+  competition (bets/`match_bet_counts` via `matches!inner(competition)`).
 - No test suite in this repo. Verify changes with `npx tsc --noEmit` (fast,
   catches missing props / type drift); there is no `npm test`.
 - A `{/* comment */}` placed *between* JSX attributes is a parse error

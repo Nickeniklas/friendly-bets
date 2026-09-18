@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { fetchWorldCupMatches, toMatchRow, type MatchRow } from "@/lib/openfootball";
+import { type MatchRow } from "@/lib/openfootball";
+import { fetchLiigaGames, toLiigaMatchRow } from "@/lib/liiga";
 
 // Always run live — this hits an external feed and writes to the DB, so it
 // must never be served from Next.js's cache.
@@ -17,7 +18,7 @@ const SETTLE_DELAY_HOURS = 3;
  * Protected sync + auto-settle job, triggered every 5 minutes by an external
  * scheduler (cron-job.org), per CLAUDE.md / docs/PLAN.md.
  *
- * 1. Pull the openfootball fixture/results feed and upsert into `matches`.
+ * 1. Pull each active fixture/results feed (currently Liiga) and upsert into `matches`.
  * 2. Find matches with a result, kicked off >3h ago, not yet settled.
  * 3. Call the `settle_match` RPC for each (idempotent — safe to repeat).
  */
@@ -32,8 +33,29 @@ export async function GET(request: NextRequest) {
   const supabase = createAdminClient();
 
   // --- 1. Sync fixtures/results -------------------------------------------------
-  const ofMatches = await fetchWorldCupMatches();
-  const rows = ofMatches.map(toMatchRow);
+  // Active feeds: Liiga only. The World Cup is over and its rows are frozen, so
+  // openfootball is no longer fetched — `fetchWorldCupMatches` / `toMatchRow`
+  // are kept in src/lib/openfootball.ts. To re-enable, add a feed entry:
+  //   { name: "openfootball", load: async () => (await fetchWorldCupMatches()).map(toMatchRow) }
+  // A new league (e.g. NHL) = a parser in src/lib + one more entry here.
+  //
+  // Each feed is fetched independently: if one fails (network, upstream
+  // outage, shape change) it's logged and skipped for this tick, and the rest
+  // of the job — including settling already-synced matches — still runs.
+  const feeds: { name: string; load: () => Promise<MatchRow[]> }[] = [
+    { name: "liiga", load: async () => (await fetchLiigaGames()).map(toLiigaMatchRow) },
+  ];
+  const rows: MatchRow[] = [];
+  const feedErrors: { feed: string; error: string }[] = [];
+  for (const feed of feeds) {
+    try {
+      rows.push(...(await feed.load()));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[sync] ${feed.name} feed failed, skipping this tick: ${message}`);
+      feedErrors.push({ feed: feed.name, error: message });
+    }
+  }
 
   // Don't let a re-sync overwrite the `result` / `result_ft` of an
   // already-settled match. Points were awarded against those values as they
@@ -77,12 +99,14 @@ export async function GET(request: NextRequest) {
   // Upsert on external_ref. Deliberately omit `status`/`settled_at` from the
   // payload so an already-settled match doesn't get reset to 'scheduled' by
   // a later re-sync — those columns are only ever written by settle_match.
-  const { error: upsertError } = await supabase
-    .from("matches")
-    .upsert(rows, { onConflict: "external_ref" });
+  if (rows.length > 0) {
+    const { error: upsertError } = await supabase
+      .from("matches")
+      .upsert(rows, { onConflict: "external_ref" });
 
-  if (upsertError) {
-    return NextResponse.json({ error: upsertError.message }, { status: 500 });
+    if (upsertError) {
+      return NextResponse.json({ error: upsertError.message }, { status: 500 });
+    }
   }
 
   // --- 2. Find matches ready to settle --------------------------------------------
@@ -127,5 +151,6 @@ export async function GET(request: NextRequest) {
     synced: rows.length,
     settled: settledIds,
     ...(failed.length > 0 ? { failed } : {}),
+    ...(feedErrors.length > 0 ? { feedErrors } : {}),
   });
 }

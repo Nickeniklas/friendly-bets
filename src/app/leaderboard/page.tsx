@@ -5,6 +5,7 @@ import { BottomNav } from "@/components/bottom-nav";
 import { type LeaderboardRow } from "@/components/leaderboard-table";
 import { LeaderboardView, type Period } from "@/components/leaderboard-view";
 import { STAGE_LABELS, STAGE_ORDER, related } from "@/lib/stats";
+import { getSelectedCompetition } from "@/lib/competitions";
 
 type PointsEntry = {
   id: string;
@@ -12,14 +13,7 @@ type PointsEntry = {
   points_balance: number;
 };
 
-type AccuracyEntry = {
-  user_id: string;
-  bets_placed: number;
-  correct: number;
-  wrong: number;
-  win_rate_pct: number;
-  streak: number;
-};
+type ProfileEntry = { id: string; display_name: string | null };
 
 // One settled bet joined to its match's round and the bettor's name. Supabase
 // returns the embedded relations as an object for to-one joins, but its
@@ -29,7 +23,7 @@ type SettledBetRow = {
   points_awarded: number;
   outcome: "won" | "lost";
   placed_at: string;
-  matches: { stage: string } | { stage: string }[] | null;
+  matches: { stage: string; competition: string } | { stage: string; competition: string }[] | null;
   profiles: { display_name: string | null } | { display_name: string | null }[] | null;
 };
 
@@ -38,13 +32,18 @@ type SettledBetRow = {
 // src/lib/stats.ts.
 
 /**
- * Aggregate settled bets into per-round leaderboard rows, using the same
- * formulas as the all-time `accuracy` view: points = Σ points_awarded,
- * bets = count, correct/wrong by outcome, win% = round(correct/total*100, 1),
- * streak = consecutive wins from the most recent bet. Returns one sorted
- * (points desc) row list per stage that has any settled bets.
+ * Aggregate settled bets into leaderboard rows, grouped by `keyOf(bet)` (e.g.
+ * the round, or one constant key for the whole competition), using the same
+ * formulas as the `accuracy` view: points = Σ points_awarded, bets = count,
+ * correct/wrong by outcome, win% = round(correct/total*100, 1), streak =
+ * consecutive wins from the most recent bet. Returns one sorted (points desc)
+ * row list per key that has any settled bets. Bets whose key is undefined are
+ * skipped.
  */
-function buildStageRows(bets: SettledBetRow[]): Map<string, LeaderboardRow[]> {
+function buildRowsByKey(
+  bets: SettledBetRow[],
+  keyOf: (b: SettledBetRow) => string | undefined
+): Map<string, LeaderboardRow[]> {
   type Acc = {
     id: string;
     display_name: string | null;
@@ -56,7 +55,7 @@ function buildStageRows(bets: SettledBetRow[]): Map<string, LeaderboardRow[]> {
   const byStage = new Map<string, Map<string, Acc>>();
 
   for (const b of bets) {
-    const stage = related(b.matches)?.stage;
+    const stage = keyOf(b);
     if (!stage) continue;
     let users = byStage.get(stage);
     if (!users) {
@@ -118,7 +117,7 @@ function buildStageRows(bets: SettledBetRow[]): Map<string, LeaderboardRow[]> {
 /**
  * "Recent form": for each player, aggregate only their most recent `limit`
  * settled bets (across all rounds, newest first). Same formulas as
- * buildStageRows. Returns rows sorted by points desc; players with no settled
+ * buildRowsByKey. Returns rows sorted by points desc; players with no settled
  * bets are omitted.
  */
 function buildRecentRows(bets: SettledBetRow[], limit = 10): LeaderboardRow[] {
@@ -310,80 +309,76 @@ function PodiumColumn({ place, entry }: { place: 1 | 2 | 3; entry: PointsEntry }
 
 export default async function LeaderboardPage() {
   // RLS allows everyone (including logged-out visitors) to read profiles and
-  // the accuracy view, so this page works without auth — same as /matches.
+  // bets, so this page works without auth — same as /matches.
   const supabase = await createClient();
+  const { competition, competitions } = await getSelectedCompetition();
 
   const [
     {
       data: { user },
     },
-    { data: points, error: pointsError },
-    { data: accuracy, error: accuracyError },
+    { data: profiles, error: profilesError },
     { data: settledBets, error: betsError },
   ] = await Promise.all([
     // Only used to decide whether to show the header's "Sign out" button.
     supabase.auth.getUser(),
-    supabase
-      .from("profiles")
-      .select("id, display_name, points_balance")
-      .order("points_balance", { ascending: false }),
-    // No ordering needed — the table below sorts client-side.
-    supabase
-      .from("accuracy")
-      .select("user_id, bets_placed, correct, wrong, win_rate_pct, streak"),
-    // Settled bets joined to their match's round + the bettor's name, used to
-    // build the per-round periods. `!inner` drops bets without a joinable
-    // match/profile; all-time still comes from profiles + accuracy above.
+    // Every registered player, so ones with no bets in this competition still
+    // get a zero row in "All time".
+    supabase.from("profiles").select("id, display_name"),
+    // The selected competition's settled bets, joined to their match's round +
+    // the bettor's name. `!inner` drops bets without a joinable match/profile
+    // and lets us filter on the match's competition.
     supabase
       .from("bets")
       .select(
-        "user_id, points_awarded, outcome, placed_at, matches!inner(stage), profiles!inner(display_name)"
+        "user_id, points_awarded, outcome, placed_at, matches!inner(stage, competition), profiles!inner(display_name)"
       )
+      .eq("matches.competition", competition.id)
       .in("outcome", ["won", "lost"]),
   ]);
 
-  if (pointsError || accuracyError || betsError) {
+  if (profilesError || betsError) {
     return (
       <div className="p-8 text-red-600">
-        Failed to load leaderboard:{" "}
-        {(pointsError ?? accuracyError ?? betsError)?.message}
+        Failed to load leaderboard: {(profilesError ?? betsError)?.message}
       </div>
     );
   }
 
-  const pointsRows = (points ?? []) as PointsEntry[];
-  const accuracyRows = (accuracy ?? []) as AccuracyEntry[];
-
-  // Join points with accuracy so every player has a full row of stats —
-  // players with no settled bets yet just get zeros (they won't be in the
-  // accuracy view, since it derives from `bets`).
-  const accuracyByUserId = new Map(accuracyRows.map((a) => [a.user_id, a]));
-  const rows: LeaderboardRow[] = pointsRows.map((p) => {
-    const acc = accuracyByUserId.get(p.id);
-    return {
-      id: p.id,
-      display_name: p.display_name,
-      points_balance: p.points_balance,
-      bets_placed: acc?.bets_placed ?? 0,
-      correct: acc?.correct ?? 0,
-      wrong: acc?.wrong ?? 0,
-      win_rate_pct: acc?.win_rate_pct ?? 0,
-      streak: acc?.streak ?? 0,
-    };
-  });
-
-  // Per-round standings, aggregated from settled bets. All-time stays on the
-  // profiles + accuracy path above (authoritative balance, lists every
-  // registered player); round periods are bets-derived (only players who had a
-  // settled bet that round).
+  const profileRows = (profiles ?? []) as ProfileEntry[];
   const allSettledBets = (settledBets ?? []) as unknown as SettledBetRow[];
-  const stageRows = buildStageRows(allSettledBets);
+
+  // All time = this competition's settled bets, aggregated per player. NOT
+  // profiles.points_balance: settle_match still adds every award there, so it's
+  // a cross-competition running total now. Players with no settled bets in
+  // this competition get zeros; the stable sort keeps them between the
+  // positive and negative scorers.
+  const scoredRows = buildRowsByKey(allSettledBets, () => "all").get("all") ?? [];
+  const scoredIds = new Set(scoredRows.map((r) => r.id));
+  const rows: LeaderboardRow[] = [
+    ...scoredRows,
+    ...profileRows
+      .filter((p) => !scoredIds.has(p.id))
+      .map((p) => ({
+        id: p.id,
+        display_name: p.display_name,
+        points_balance: 0,
+        bets_placed: 0,
+        correct: 0,
+        wrong: 0,
+        win_rate_pct: 0,
+        streak: 0,
+      })),
+  ].sort((a, b) => b.points_balance - a.points_balance);
+
+  // Per-round standings (only players who had a settled bet that round).
+  const stageRows = buildRowsByKey(allSettledBets, (b) => related(b.matches)?.stage);
 
   // Period selector options: All time first, then each round that has any
   // settled bets, in canonical tournament order. Any unrecognized stage code
   // (a mapStage fallback slug) is appended last so its data is never dropped.
   const periods: Period[] = [
-    { key: "all", label: "All time", podium: renderPodium(pointsRows), rows },
+    { key: "all", label: "All time", podium: renderPodium(rows), rows },
   ];
 
   // Recent-form view (each player's last 10 settled bets), right after
@@ -413,20 +408,22 @@ export default async function LeaderboardPage() {
   return (
     <div className="min-h-screen pb-[72px]">
       {/* Sticky header (no points pill on the leaderboard) */}
-      <AppHeader loggedIn={!!user} />
+      <AppHeader loggedIn={!!user} competition={competition} competitions={competitions} />
 
       {/* Content */}
       <div className="mx-auto max-w-[600px] px-4 pt-5 pb-4">
         <h1 className="mb-1 text-[26px] font-bold tracking-[-0.5px]">Leaderboard</h1>
         <p className="mb-8 text-sm text-[var(--muted)]">
-          World Cup 2026 · {pointsRows.length} player{pointsRows.length === 1 ? "" : "s"}
+          {competition.name} · {rows.length} player{rows.length === 1 ? "" : "s"}
         </p>
 
-        {pointsRows.length === 0 ? (
+        {rows.length === 0 ? (
           <p className="mb-7 text-sm text-[var(--muted)]">No players yet.</p>
         ) : (
           // Period selector (All time + per round) wrapping the podium + table.
-          <LeaderboardView periods={periods} />
+          // Keyed by competition so switching competitions resets the selected
+          // period (a WC round key wouldn't exist for Liiga).
+          <LeaderboardView key={competition.id} periods={periods} />
         )}
       </div>
 

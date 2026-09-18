@@ -13,7 +13,7 @@ export default async function Home() {
       <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
         <h1 className="text-2xl font-semibold">Friendly Bets</h1>
         <p className="text-zinc-600 dark:text-zinc-400">
-          World Cup 2026 prediction game for family &amp; friends.
+          Sports prediction game for family &amp; friends.
         </p>
         <Link
           href="/login"

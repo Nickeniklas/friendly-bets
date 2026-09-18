@@ -3,6 +3,7 @@ import { signInWithMagicLink } from "./actions";
 import { SubmitButton } from "./submit-button";
 import { GoogleButton } from "./google-button";
 import { ThemeTogglePill } from "./theme-toggle-pill";
+import { getSelectedCompetition, sportIcon } from "@/lib/competitions";
 
 export default async function LoginPage({
   searchParams,
@@ -10,14 +11,20 @@ export default async function LoginPage({
   searchParams: Promise<{ message?: string; error?: string }>;
 }) {
   const { message, error } = await searchParams;
+  // Brand subtitle/icon follow the selected (or default active) competition.
+  // Never let a DB hiccup here block signing in — fall back to generic copy.
+  const selected = await getSelectedCompetition().catch(() => null);
+  const competition = selected?.competition;
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-5 py-8">
       <div className="mb-9 text-center">
-        <div className="mb-[14px] text-[48px] leading-none">⚽</div>
+        <div className="mb-[14px] text-[48px] leading-none">
+          {sportIcon(competition?.sport ?? "football")}
+        </div>
         <div className="text-[26px] font-bold tracking-[-0.6px]">Friendly Bets</div>
         <div className="mt-1.5 text-[12px] font-semibold tracking-[0.1em] text-[var(--green)] uppercase">
-          World Cup 2026
+          {competition?.name ?? "Prediction game"}
         </div>
       </div>
 
