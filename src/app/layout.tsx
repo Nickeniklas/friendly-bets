@@ -12,6 +12,13 @@ const spaceGrotesk = Space_Grotesk({
 export const metadata: Metadata = {
   title: "Friendly Bets",
   description: "Sports prediction game for family & friends.",
+  // iOS home-screen name + full-screen launch. The icon itself comes from the
+  // src/app/apple-icon.png file convention, and the Android/PWA side from
+  // src/app/manifest.ts.
+  appleWebApp: {
+    capable: true,
+    title: "Friendly Bets",
+  },
 };
 
 export default function RootLayout({

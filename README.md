@@ -70,8 +70,8 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
   people signing in. See `CLAUDE.md` ("Email / SMTP") for setup details.
   Since the sending address has no domain reputation yet, `/login` shows a
   reminder to check spam/junk for the magic-link email.
-- Team flags are shown next to team names on `/matches` (see "Team flags"
-  below).
+- Team flags (World Cup) and club logos (Liiga) are shown next to team names
+  on `/matches` (see "Team flags and logos" below).
 - Daily login bonus — **disabled 2026-06-16** (it inflated the prediction
   score under the new fixed-points model). The DB RPC/columns remain dormant;
   all app wiring was removed. See "Daily login bonus (disabled)" below.
@@ -138,9 +138,12 @@ competition — points and standings are summed from that competition's bets.
 
 Liiga data comes from liiga.fi's public site API (`src/lib/liiga.ts`, one request per
 sync). Hockey is graded on the **60-minute result**: a game tied after regulation is a
-**Draw**, whoever wins in overtime or the shootout. Past cards show "OT" / "SO" notes
-instead of "a.e.t." / "pens", and the "Win in 90′" option only exists on World Cup
-knockout matches.
+**Draw**, whoever wins in overtime or the shootout. So a Past card's headline score is
+always the **60-minute score** (a 2–2 headline means Draw won), with the final score
+underneath as a note: "3–2 OT" after overtime, "5–4 SO" after a shootout (regulation +
+the shootout decider, the way liiga.fi counts it), nothing for a regulation finish.
+Football keeps its "a.e.t." / "pens" notes with the after-extra-time headline. The
+"Win in 90′" option only exists on World Cup knockout matches.
 
 To add a competition (e.g. NHL): insert a `competitions` row, write a parser in
 `src/lib` that returns `MatchRow[]`, and add it to the `feeds` list in
@@ -294,21 +297,60 @@ Three sections:
   underdog hunter, most accurate, most predictions, sharpest contrarian
   (rate-based records need at least 5 settled predictions to qualify).
 
-### Team flags
+### Team flags and logos
 
-`/matches` shows a small flag next to each team name. `src/lib/flags.ts` maps
-the 48 real WC2026 country names (as they appear in openfootball's
-`team1`/`team2`) to [flag-icons](https://flagicons.lipis.dev/) codes; the SVGs
-themselves live in `public/flags/` (copied from the `flag-icons` npm package
-by `scripts/copy-flags.mjs`, which is also how to add a flag later). The
-`Flag` component (`src/components/flag.tsx`) renders nothing for team names
-not in the map — that covered the knockout-bracket placeholders (`"1A"`,
-`"W74"`, etc.), which get real country names as the bracket plays out. As of
-2026-07-18 the bracket is fully resolved, so every match row now carries real
-country names and no placeholders remain. If a placeholder ever resolves to a
-country not yet in `TEAM_FLAG_CODES`, add it there and re-run the copy script.
-Liiga team names aren't in the map, so Liiga cards show no flags (and no team
-logos, for licensing reasons) — that's intended.
+`/matches` shows a small mark next to each team name: a country flag for
+national teams, a club logo for Liiga teams, nothing otherwise. The `Flag`
+component (`src/components/flag.tsx`) checks the flag map first, then the logo
+map, and renders nothing for names in neither.
+
+**Flags.** `src/lib/flags.ts` maps the 48 real WC2026 country names (as they
+appear in openfootball's `team1`/`team2`) to
+[flag-icons](https://flagicons.lipis.dev/) codes. The SVGs live in
+`public/flags/`, copied from the `flag-icons` npm package by
+`scripts/copy-flags.mjs`, which is also how to add a flag later. Knockout-bracket
+placeholders (`"1A"`, `"W74"`, etc.) have no entry and got no flag; as of
+2026-07-18 the bracket is fully resolved, so none remain.
+
+**Club logos.** liiga.fi's games API (the same one `/api/sync` uses) includes
+each team's logo, but as CMS asset URLs that can change, so the app doesn't
+hotlink them. `scripts/copy-team-logos.mjs` fetches the feed once, downloads
+every team's logo into `public/teams/` (`kalpa.webp`, plus `lukko-dark.png`
+where liiga.fi has a separate dark-background variant) and **regenerates**
+`src/lib/team-logos.ts` (`TEAM_LOGOS`, keyed by the exact `teamName` stored in
+`matches.team1`/`team2`). Logos render square (`object-contain`). In dark mode
+each logo sits on a small near-white circle so black logos (e.g. TPS) stay
+visible. The exception is a team with its own dark-background variant (Lukko),
+which switches to that variant instead, with no circle. Both follow the app's
+dark/light toggle via CSS `dark:` classes, so there's no flash. Re-run the script when the team set changes
+(e.g. a team is promoted) or when the season changes (update the URL in the
+script to match `src/lib/liiga.ts`), then commit the images and the
+regenerated map:
+
+```bash
+node scripts/copy-team-logos.mjs
+```
+
+### Icons
+
+The app has one sport-neutral icon everywhere (a white check in a ring on the
+app green), since it covers several competitions. `node scripts/make-app-icons.mjs`
+generates every icon file from one SVG definition:
+
+| File | Used for |
+|---|---|
+| `src/app/icon.svg` | Browser tab (scalable, rounded corners) |
+| `src/app/favicon.ico` | Tab fallback for browsers without SVG favicons (16/32/48) |
+| `src/app/apple-icon.png` | iOS "Add to Home Screen" (180×180) |
+| `public/icons/icon-192.png`, `icon-512.png` | Web manifest, `purpose: "any"` |
+| `public/icons/maskable-192.png`, `maskable-512.png` | Web manifest, `purpose: "maskable"` (Android adaptive icons) |
+
+The `src/app` files are Next.js metadata file conventions, so Next adds their
+`<link>` tags itself. The `public/icons` ones are listed in `src/app/manifest.ts`,
+which also opens the installed app standalone on `/matches`. The home-screen PNGs
+are fully opaque on purpose, because iOS turns transparent pixels black. The
+maskable variants shrink the mark so it stays inside the central 80% safe zone
+that Android keeps when it crops the icon to a circle or squircle.
 
 ### Daily login bonus (disabled)
 

@@ -1366,3 +1366,85 @@ real feed: regulation win → `team2`; SO game → `draw`, score 4–4 + "1–0 
 Then deployed (commit `78dbca4`): the owner applied the migration with
 `supabase db push`, ran `/api/sync` once, and confirmed everything working live on
 2026-09-18 (Liiga as the default competition, switching to the World Cup and back).
+
+## Post-v1 — Liiga display tweaks: 60-min score headline, team logos, app icons (2026-09-18)
+
+Three small display changes after the Liiga launch. No DB migration, no sync change.
+
+### Hockey score: regulation score as the headline
+`matchScore()` (`src/app/matches/page.tsx`) used the after-OT score (`et_*`) as the
+hockey headline, so an OT game headlined its final score while picks were graded on
+the 60-minute result. The hockey branch now always headlines the **regulation score**
+(`ft_*`), so the headline agrees with the grading (a 2–2 headline = Draw won, matching
+the "Draw after 60′" status from `statusInfo()`). The note carries the final score
+instead of a bare label: `"{et1}–{et2} OT"` after overtime, `"{ft1+p1}–{ft2+p2} SO"`
+after a shootout (`p_*` is the shootout decider, e.g. 1–0, and liiga.fi counts the
+final as regulation + that decider), and no note for a regulation finish. The shootout
+check comes first because the Liiga parser also sets `et_*` for shootout games.
+`statusInfo()` needed no logic change (its hockey "X won" can only mean a regulation
+win); only its comment was updated. Football is unchanged.
+### Real Liiga team logos
+liiga.fi's games API carries `homeTeam.logos.lightBg` / `darkBg` (cdn.builder.io URLs,
+the same for both except Lukko). Rather than hotlinking CMS URLs that may change, new
+`scripts/copy-team-logos.mjs` (a one-off dev script like `copy-flags.mjs`, not part of
+the build or `/api/sync`) fetches the feed once, downloads each unique team's
+`lightBg` (and `darkBg` only when it differs) into `public/teams/<slug>.<ext>` (the
+extension comes from the response content-type: 16 `.webp` plus Lukko's two `.png`),
+and regenerates `src/lib/team-logos.ts` (`TEAM_LOGOS`). `Flag`
+(`src/components/flag.tsx`) now shows the country flag if there is one, else the club
+logo, else nothing. Logos render in a square box with `object-contain`, with the size
+set inline because Tailwind's preflight `img { height: auto }` would undo the square.
+Unlike the SVG flags they go through the Next image optimizer, since the sources are
+up to 1500 px. A team with a dark variant renders both images with
+`dark:hidden` / `hidden dark:inline-flex`. That keys off the app's `.dark` class, not
+`prefers-color-scheme`, and being pure CSS it has no hydration mismatch.
+
+Follow-up the same day: some logos are black (TPS) and all but vanished on dark cards.
+In dark mode only, each logo's box now becomes a near-white circle
+(`dark:rounded-full dark:bg-[oklch(0.95_0.005_250)] dark:p-[3px]`), which shrinks the
+logo slightly inside the same 28 px box. Teams with a dedicated dark variant (Lukko)
+skip the backing. Their gold logo is designed for a dark background and looked washed
+out on the white circle. Light mode and flags are unchanged. `Flag` is
+only rendered in `match-card.tsx`'s team buttons (`/stats` shows no flags), so that is
+the only call site.
+
+### App icons + web manifest
+The old `src/app/apple-icon.png` was the football with transparent rounded corners (iOS
+renders those black). It's replaced by a sport-neutral mark, a white check in a ring
+on the app green (`--green` → `#43b43a`), fully opaque. There's no sport-neutral brand
+mark elsewhere to reuse: the `/login` logo is ⚽ + wordmark. New
+`scripts/make-app-icons.mjs` renders it with sharp to `src/app/apple-icon.png` (180),
+`public/icons/icon-192.png` and `icon-512.png`. New `src/app/manifest.ts` (name/short
+name "Friendly Bets", `start_url` `/matches`, `display` standalone, theme/background =
+the dark `--background` `#020509`, the 192/512 icons as both `any` and `maskable`). The
+root layout's metadata gained `appleWebApp: { capable: true, title: "Friendly Bets" }`.
+
+Follow-up the same day: one icon everywhere. The football tab icon is gone (`src/app/icon.png`
+deleted). `make-app-icons.mjs` now also writes `src/app/icon.svg` (the same mark with
+rounded corners) and `src/app/favicon.ico` (16/32/48 PNG-in-ICO, via a small hand-rolled
+ICO writer since sharp can't write .ico). The rendered `<head>` has exactly one each of
+`favicon.ico`, `icon.svg` and `apple-touch-icon`. The manifest's `maskable` entries now
+point at separate `public/icons/maskable-192/512.png`. These use the same full-bleed green
+with the mark scaled to 80%, so the ring's outer edge sits at ~26% radius, well inside the
+40%-radius safe zone. `icon-192/512.png` remain the `any` icons.
+
+### Verification
+`npx tsc --noEmit` and `npx eslint src` clean. On the local dev server (Playwright,
+mobile viewport): the head has `<link rel="manifest">`, `apple-touch-icon` (180×180)
+and the apple-mobile-web-app meta tags, and `/manifest.webmanifest` serves the JSON
+above. With Liiga selected, in dark and light mode, every team button on Upcoming (36
+games) and Past (27) shows a logo with no broken images, and Lukko loads
+`lukko-dark.png` in dark mode and `lukko.png` in light mode. Settled OT games render as
+"3 – 3" + "3–4 OT" (Kärpät–Ilves) and "1 – 1" + "2–1 OT" (SaiPa–K-Espoo). The only
+shootout so far, 2701280 Sport–Jokerit (1 Sep), falls outside the ±14-day window, so
+it was checked against its DB row with the same logic: "4–4" + "5–4 SO". With the World
+Cup selected, flags and football scores/notes ("1 – 0" + "a.e.t." on the final) are
+unchanged.
+
+Follow-up checks: tsc + eslint clean again. The head serves the new `favicon.ico` (48x48
+listed), `icon.svg` (`sizes="any"`) and the apple icon, with no leftover `icon.png` link.
+The manifest lists the `any` and `maskable` pairs, and all files return 200. A 16/32/48
+render of the ICO is legible. A circular crop of `maskable-512.png` keeps the whole mark
+inside the safe-zone circle. On `/matches` (Liiga, dark), TPS shows on its light circle and
+Lukko shows its gold logo with no circle. In light mode there's no backing. World Cup flags
+still render as plain 4:3 images with no wrapper.

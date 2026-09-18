@@ -33,8 +33,9 @@ export type Distribution = {
 
 const UNDERDOG_THRESHOLD = 0.33;
 
-// The final score to show on a settled match. `note` carries "a.e.t." /
-// "4–2 pens" context; see matchScore() in page.tsx.
+// The score to show on a settled match. `note` carries "a.e.t." /
+// "4–2 pens" (football) or "3–2 OT" / "5–4 SO" (hockey) context; see
+// matchScore() in page.tsx.
 export type MatchScore = { home: number; away: number; note?: string };
 
 export function MatchCard({
@@ -157,8 +158,8 @@ export function MatchCard({
       </div>
 
       {/* Final score (settled matches only) — a prominent "2 – 1" with an
-          optional "a.e.t." / "4–2 pens" note so it doesn't look like it
-          contradicts a knockout winner. */}
+          optional "a.e.t." / "4–2 pens" / "3–2 OT" / "5–4 SO" note so it
+          doesn't look like it contradicts the result. */}
       {score && (
         <div className="mb-3 text-center">
           <div className="text-2xl font-bold tabular-nums leading-none text-[var(--foreground)]">

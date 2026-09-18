@@ -17,7 +17,8 @@ type Match = {
   result: string | null;
   result_ft: string | null;
   // Actual goal counts (display only) — null until the sync job records them.
-  // ft = after 90'; et/p = extra time / penalties (knockouts only).
+  // ft = after 90' (football) / 60' (hockey); et/p = extra time / penalties
+  // (football knockouts) or overtime / shootout decider (hockey).
   ft_team1: number | null;
   ft_team2: number | null;
   et_team1: number | null;
@@ -105,7 +106,9 @@ function statusInfo(
   if (match.status === "settled" && sport === "hockey") {
     // Hockey is graded on the 60-minute result (result = result_ft), so a game
     // tied after regulation is a "Draw" even if it was won in OT/shootout —
-    // say so, since the score note below will show the OT/SO winner.
+    // say so. This matches matchScore(), whose headline is the regulation
+    // score (a tie there = this label) and whose note shows the OT/SO final.
+    // A "won" label here therefore always means won in regulation.
     if (match.result === "team1") return { label: `${match.team1} won`, color: "muted" };
     if (match.result === "team2") return { label: `${match.team2} won`, color: "muted" };
     return { label: "Draw after 60′", color: "gold" };
@@ -125,28 +128,34 @@ function statusInfo(
 }
 
 // The score to show on a settled match card. `home`/`away` are the headline
-// goal counts (the extra-time aggregate when a knockout went to ET, otherwise
-// the 90-minute score); `note` adds "a.e.t." / "4–2 pens" context so the score
-// doesn't look like it contradicts a knockout winner. Returns undefined for
-// matches that aren't settled or have no recorded score yet (older settled
-// matches stay note-less until the next /api/sync backfills their goals).
+// goal counts — football: the extra-time aggregate when a knockout went to ET,
+// otherwise the 90-minute score; hockey: always the 60-minute score. `note`
+// adds "a.e.t." / "4–2 pens" (football) or "3–2 OT" / "5–4 SO" (hockey final)
+// context so the score doesn't look like it contradicts the result. Returns
+// undefined for matches that aren't settled or have no recorded score yet
+// (older settled matches stay note-less until the next /api/sync backfills
+// their goals).
 type MatchScore = { home: number; away: number; note?: string };
 
 function matchScore(match: Match, sport: string): MatchScore | undefined {
   if (match.status !== "settled") return undefined;
 
-  // Hockey: same headline rule (score after OT if it went there, else
-  // regulation), labelled "OT" / "SO" instead of "a.e.t." / "pens". et_* is
-  // only set by the Liiga parser when the game actually went to overtime.
+  // Hockey: the headline is ALWAYS the 60-minute (regulation) score, because
+  // that's what picks are graded on — a 2–2 headline means Draw won. The note
+  // carries the final score and how it was decided. The Liiga parser sets et_*
+  // for any game that went past regulation (OT or shootout) and p_* only for a
+  // shootout, where p_* is the shootout "period" decider (e.g. 1–0) — liiga.fi
+  // counts the final score as regulation + that decider (OT is scoreless in a
+  // game that reaches a shootout).
   if (sport === "hockey") {
-    const home = match.et_team1 ?? match.ft_team1;
-    const away = match.et_team2 ?? match.ft_team2;
+    const home = match.ft_team1;
+    const away = match.ft_team2;
     if (home == null || away == null) return undefined;
     let note: string | undefined;
     if (match.p_team1 != null && match.p_team2 != null) {
-      note = `${match.p_team1}–${match.p_team2} SO`;
-    } else if (match.et_team1 != null) {
-      note = "OT";
+      note = `${home + match.p_team1}–${away + match.p_team2} SO`;
+    } else if (match.et_team1 != null && match.et_team2 != null) {
+      note = `${match.et_team1}–${match.et_team2} OT`;
     }
     return { home, away, note };
   }
