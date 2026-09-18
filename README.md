@@ -1,12 +1,21 @@
 # friendly-bets
 
-A non-commercial World Cup 2026 prediction game for family & friends. See `CLAUDE.md`
+A non-commercial sports prediction game for family & friends — built for the World
+Cup 2026, now running the **Liiga 2026–27 regular season** (Finnish ice hockey), with
+a header dropdown to switch competitions. See `CLAUDE.md`
 and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and current status.
 `docs/HISTORY.md` has the detailed step-by-step build log.
 
 ## Status
 
 **v2 is complete and live** at `https://friendly-bets-rust.vercel.app`.
+
+> **2026-09-18 — Liiga + multiple competitions.** The active competition is now the
+> Liiga 2026–27 regular season; the finished World Cup stays selectable from a
+> dropdown in the header. Same game (home/draw/away, +10 / +5 underdog / −5), with
+> hockey graded on the 60-minute result. DB changes are in
+> `supabase/migrations/20260918120000_competitions.sql` (applied). See "Competitions"
+> below.
 
 > **2026-06-16 — model change: parimutuel pool → fixed-points scoring.** Players no
 > longer stake points. They predict each match's outcome (home win / draw / away win)
@@ -21,8 +30,9 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
   `supabase/migrations/`).
 - `/api/sync` (`src/app/api/sync/route.ts`) is deployed to Vercel, protected by a
   shared secret, and triggered every 5 minutes by cron-job.org (200 OK confirmed,
-  reduced from every 2-3h on 2026-06-14) — pulls openfootball fixtures/results,
-  upserts `matches`, and auto-settles via `settle_match`. The Vercel project is
+  reduced from every 2-3h on 2026-06-14) — pulls Liiga fixtures/results from
+  liiga.fi (openfootball, the WC source, is no longer fetched), upserts `matches`,
+  and auto-settles via `settle_match`. The Vercel project is
   connected to this GitHub repo for auto-deploys on push to `main`.
 - Auth is built two ways: **magic link** (`/login` sends a sign-in email,
   `/auth/confirm` completes it) and **Google OAuth** (a "Sign in with Google"
@@ -30,7 +40,7 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
   logged-in user's name + points balance with a sign-out button. Session cookies
   are kept fresh by `src/proxy.ts`. `NEXT_PUBLIC_SITE_URL` is set in Vercel and
   verified live. See "Auth" below.
-- The match list page (`/matches`) splits all World Cup 2026 fixtures into
+- The match list page (`/matches`) splits the selected competition's fixtures into
   Upcoming/Live/Past tabs (default Upcoming), each grouped by kickoff date under
   sticky headers with stage/group, kickoff time (Finnish time), status, and a
   per-tab match count. Readable by anyone (no login needed) and linked from the
@@ -44,7 +54,7 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
 - Leaderboard (`/leaderboard`) shows a points podium (top 3) plus one
   sortable table covering every player (points, bets, correct, wrong, win %,
   streak). A segmented **period selector** sits above the podium: **All time**
-  (from `profiles` + the `accuracy` view), **Last 10** (each player's recent
+  (the selected competition's settled bets), **Last 10** (each player's recent
   form), and one pill per **tournament round** that has settled bets — both the
   podium and the table re-scope to the selected period. Linked from the home
   page and `/matches`.
@@ -112,8 +122,29 @@ With `npm run dev` running, in another terminal:
 curl http://localhost:3000/api/sync -H "Authorization: Bearer <your-SYNC_SECRET>"
 ```
 
-Expect `{"synced": <count>, "settled": [...]}`. The `matches` table should populate
-with World Cup 2026 fixtures.
+Expect `{"synced": <count>, "settled": [...]}` (plus `feedErrors` if a feed failed —
+that feed is skipped for the tick, the rest still runs). The `matches` table should
+populate with Liiga 2026–27 regular-season games (`competition = 'liiga-2027'`).
+
+### Competitions
+
+Every match belongs to a row in the `competitions` table (`wc2026` = World Cup 2026,
+football, finished; `liiga-2027` = Liiga 2026–27, hockey, active). The dropdown in the
+sticky header (`src/components/competition-select.tsx`) stores the choice in the
+`fb-competition` cookie and refreshes the page; `getSelectedCompetition()`
+(`src/lib/competitions.ts`) reads it on the server and falls back to the first active
+competition. `/matches`, `/leaderboard` and `/stats` show only the selected
+competition — points and standings are summed from that competition's bets.
+
+Liiga data comes from liiga.fi's public site API (`src/lib/liiga.ts`, one request per
+sync). Hockey is graded on the **60-minute result**: a game tied after regulation is a
+**Draw**, whoever wins in overtime or the shootout. Past cards show "OT" / "SO" notes
+instead of "a.e.t." / "pens", and the "Win in 90′" option only exists on World Cup
+knockout matches.
+
+To add a competition (e.g. NHL): insert a `competitions` row, write a parser in
+`src/lib` that returns `MatchRow[]`, and add it to the `feeds` list in
+`src/app/api/sync/route.ts`. No page changes needed.
 
 ### Auth (magic link + Google)
 
@@ -172,6 +203,9 @@ tabs, each showing a match count:
   result yet). Soonest-started first.
 - **Past** — settled. Most recent result first.
 
+For an active competition (Liiga), Upcoming and Past only show the next / last 14
+days — a regular season has ~540 games. The finished World Cup shows everything.
+
 Within each tab, matches are grouped under a sticky date header per kickoff
 day, styled as a bold green "washi tape" banner (clipped/angled corners) with
 the date and that day's match count. Kickoff times are shown in Finnish time
@@ -204,12 +238,14 @@ required). At the top, a segmented **period selector**
 (`src/components/leaderboard-view.tsx`, `LeaderboardView`) lets you switch
 which period the podium + table show:
 
-- **All time** (default) — points from `profiles.points_balance`, stats from
-  the `accuracy` view; lists every registered player (zeros for those with no
-  settled bets yet). This is the authoritative all-time standing.
+- **All time** (default) — aggregated from the selected competition's settled
+  bets; lists every registered player (zeros for those with no settled bets in
+  that competition). `profiles.points_balance` is no longer shown — it's a
+  running total across all competitions.
 - **Last 10** — each player's recent form, aggregated over only their 10 most
   recent settled predictions (newest first, across all rounds).
-- **One pill per tournament round** (`Group stage`, `Round of 32`, …, `Final`)
+- **One pill per tournament round** (`Group stage`, `Round of 32`, …, `Final`,
+  or `Regular season` for Liiga)
   — appears only once that round has settled bets, in tournament order. Shows
   only the players who predicted that round.
 
@@ -238,7 +274,8 @@ reflects the current sort order.
 personal section is gated behind login). Like `/leaderboard`, it's a Server
 Component that computes everything up front and hands precomputed sections to a
 client switcher (`src/components/stats-view.tsx`, `StatsView`) — switching is
-instant, no refetch. All aggregation lives in `src/lib/stats.ts` (pure
+instant, no refetch. Like the other pages it only covers the selected
+competition. All aggregation lives in `src/lib/stats.ts` (pure
 functions; same formulas as the `accuracy` view), and it needs **no new DB
 view/RPC** — everything derives from the existing `bets`, `matches`,
 `match_bet_counts`, `profiles`, and `accuracy` objects.
@@ -270,6 +307,8 @@ not in the map — that covered the knockout-bracket placeholders (`"1A"`,
 2026-07-18 the bracket is fully resolved, so every match row now carries real
 country names and no placeholders remain. If a placeholder ever resolves to a
 country not yet in `TEAM_FLAG_CODES`, add it there and re-run the copy script.
+Liiga team names aren't in the map, so Liiga cards show no flags (and no team
+logos, for licensing reasons) — that's intended.
 
 ### Daily login bonus (disabled)
 

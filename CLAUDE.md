@@ -24,7 +24,8 @@ selectable — see the 2026-09-18 "Liiga" entry at the end of this list.
 
 - Supabase schema, RPC (`settle_match`), `accuracy` view, RLS, and GRANTs are applied.
 - `/api/sync` is deployed, protected by `SYNC_SECRET`, and triggered every 5 minutes by
-  cron-job.org (syncs openfootball fixtures/results and auto-settles finished matches).
+  cron-job.org (syncs fixtures/results and auto-settles finished matches — Liiga
+  since 2026-09-18; openfootball for the WC before that).
 - Magic-link auth (`/login`, `/auth/confirm`, sign-out) works via custom SMTP (Brevo).
 - `/matches` splits all fixtures into Upcoming/Live/Past tabs, date-grouped under sticky
   headers, with a three-way pick (home/draw/away) per bettable match and a crowd-split
@@ -222,7 +223,8 @@ start on these without being asked.
   the same points/win%/streak formulas as the `accuracy` view. **All time is
   deliberately left on the existing `profiles.points_balance` + `accuracy`
   path** (authoritative balance; lists every registered player incl. zero-bet
-  ones), while the round/Last-10 periods are bets-derived (only players who
+  ones) — **superseded 2026-09-18:** All time is now also bets-derived, per
+  competition (see the Liiga entry below) — while the round/Last-10 periods are bets-derived (only players who
   predicted in that scope) — this intentional difference is noted in code
   comments. The `bets` table was already publicly readable
   (`"bets: read all"` + GRANT to anon/authenticated), so no new grant/policy
@@ -377,8 +379,9 @@ start on these without being asked.
   code kept), and a failing feed is logged + skipped without failing the run. For an
   active competition `/matches` shows ±14 days only. Hockey display keys off
   `sport`: OT/SO score notes, "Draw after 60′", 🏒 icon, extra intro-card rule, no
-  "Win in 90′" (now `isKnockoutStage()`, not `stage !== 'group'`). **Manual:** apply
-  the migration, then trigger `/api/sync` once. See `docs/HISTORY.md`.
+  "Win in 90′" (now `isKnockoutStage()`, not `stage !== 'group'`). Committed in
+  `78dbca4`; migration applied, `/api/sync` run, and confirmed working live by the
+  owner (2026-09-18). See `docs/HISTORY.md`.
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.

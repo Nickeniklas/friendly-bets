@@ -1363,4 +1363,6 @@ to `settled`.
 `npx tsc --noEmit` and `npx eslint src` clean. The Liiga parser was run against the
 real feed: regulation win → `team2`; SO game → `draw`, score 4–4 + "1–0 SO"; OT game →
 `draw`, score 2–1 + "OT"; unplayed → null result; all 544 external_refs unique.
-Not verified against a live DB in this session (migration not yet applied).
+Then deployed (commit `78dbca4`): the owner applied the migration with
+`supabase db push`, ran `/api/sync` once, and confirmed everything working live on
+2026-09-18 (Liiga as the default competition, switching to the World Cup and back).
