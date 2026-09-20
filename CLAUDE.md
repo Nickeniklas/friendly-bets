@@ -5,7 +5,7 @@ For a step-by-step account of how v1 was built (including bugs found and fixed a
 way), see `docs/HISTORY.md` — that detail has been moved out of this file to keep this
 brief current and short.
 
-## Status (as of 2026-09-18)
+## Status (as of 2026-09-20)
 **v2 is complete and live** at `https://friendly-bets-rust.vercel.app`. All of
 `docs/PLAN.md`'s build order (steps 1-8) is DONE. **The active competition is now
 the Liiga 2026–27 regular season (ice hockey)**; the finished World Cup stays
@@ -263,7 +263,9 @@ start on these without being asked.
   comparison, and the most-backed team; **Records** (public) — longest streak,
   biggest single-round haul, best underdog hunter, most accurate, most
   predictions, sharpest contrarian (rate-based records need ≥5 settled bets to
-  qualify). All aggregation lives in the new **`src/lib/stats.ts`** (pure, no
+  qualify). **Superseded 2026-09-20:** the accuracy-by-stage bars and the haul
+  record now group by *period* (a game week for hockey) — see the entry at the
+  end of this list. All aggregation lives in the new **`src/lib/stats.ts`** (pure, no
   React/Supabase — `computePersonalStats` / `computeCrowdFacts` /
   `computeRecords` plus shared types); the formulas match the `accuracy` view
   (points = Σ points_awarded, win% = round(correct/total*1000)/10). The
@@ -399,6 +401,21 @@ start on these without being asked.
   opaque), and manifest (`public/icons/icon-*` = any, `maskable-*` = maskable).
   Plus `src/app/manifest.ts` (standalone, `start_url` `/matches`) and
   `appleWebApp` metadata in the root layout. The football icon is gone. See
+  `docs/HISTORY.md`.
+- **Weekly leaderboard periods for hockey (2026-09-20)** — the leaderboard pills,
+  `/stats`' "biggest single-round haul" record and the "You" accuracy breakdown
+  used to group by `matches.stage`, which gave Liiga one "Regular season" bucket
+  that duplicated All time. They now group by a per-competition **period**, chosen
+  from `competitions.sport`: football → `stage` (unchanged), hockey →
+  `matches.group_label` ("Week N", already written by `src/lib/liiga.ts`), ordered
+  newest week first; an unknown sport falls back to football. **No migration, no
+  parser change.** Helpers `periodKey` / `periodLabel` / `orderPeriodKeys` /
+  `periodNoun` live in `src/lib/stats.ts` beside `STAGE_LABELS`/`STAGE_ORDER`.
+  `computePersonalStats` and `computeRecords` now take `sport` as their first
+  argument, `PersonalStats.byStage` is `byPeriod` (`PeriodStat`), and `StatsBet`
+  carries `group_label`; the leaderboard + stats selects fetch `group_label` too.
+  UI copy follows `periodNoun(sport)` ("Accuracy by week", "Biggest single-week
+  haul"), and the leaderboard's empty state now says "in this period". See
   `docs/HISTORY.md`.
 
 ## Cron setup (DONE — reference only)

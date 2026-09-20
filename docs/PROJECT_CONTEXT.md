@@ -102,12 +102,12 @@ exactly why the scoring design needs no oddsmaking).
 - No test suite — verify with `npx tsc --noEmit` + eslint.
 
 ## Open items
-- None known. Liiga support shipped 2026-09-18 (see CLAUDE.md Status).
+- None known. Liiga support shipped 2026-09-18, and the leaderboard pills / stats
+  breakdowns became per-sport "periods" (football round, hockey game week) on
+  2026-09-20 (see CLAUDE.md Status).
 
 ## v3 ideas (backlog — don't start without being asked)
 - Liiga playoffs (series format — not yet looked at), NHL.
-- Stage-based stats in `/stats` are WC-shaped (e.g. "accuracy by stage" is a single
-  "Regular season" bar for Liiga); a per-week breakdown would suit leagues better.
 - Live in-match scores/stats (needs a different data source than openfootball).
 - Knockout-bracket-specific logic (predict who advances, bracket-wide scoring).
 - Crowd facts in `/stats` still key off `result` (advancer) not `result_ft` — known

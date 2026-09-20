@@ -55,11 +55,12 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
   sortable table covering every player (points, bets, correct, wrong, win %,
   streak). A segmented **period selector** sits above the podium: **All time**
   (the selected competition's settled bets), **Last 10** (each player's recent
-  form), and one pill per **tournament round** that has settled bets — both the
-  podium and the table re-scope to the selected period. Linked from the home
-  page and `/matches`.
+  form), and one pill per **period** that has settled bets — a tournament round
+  for football, a game week for hockey (newest first) — both the podium and the
+  table re-scope to the selected period. Linked from the home page and
+  `/matches`.
 - Stats tab (`/stats`) "for the curious": a **You** section (login-gated —
-  your accuracy by round, pick tendencies, contrarian record, ranking and best
+  your accuracy by period, pick tendencies, contrarian record, ranking and best
   calls), a public **The Crowd** section (wisdom-of-the-crowd accuracy, biggest
   upset, most divisive/consensus matches, draw-shyness, fan favourite), and a
   public **Records** section (league-wide superlatives). All derived from
@@ -247,14 +248,24 @@ which period the podium + table show:
   running total across all competitions.
 - **Last 10** — each player's recent form, aggregated over only their 10 most
   recent settled predictions (newest first, across all rounds).
-- **One pill per tournament round** (`Group stage`, `Round of 32`, …, `Final`,
-  or `Regular season` for Liiga)
-  — appears only once that round has settled bets, in tournament order. Shows
-  only the players who predicted that round.
+- **One pill per period** — what a period is depends on the competition's
+  **sport** (never its id):
+  - *football* → the tournament round (`Group stage`, `Round of 32`, …,
+    `Final`), in tournament order;
+  - *hockey* → the game week (`Week 12`, from `matches.group_label`, which
+    `src/lib/liiga.ts` fills in), **newest week first**, so the current week is
+    the first pill after Last 10. A league season has one `stage` for every
+    match, so grouping it by round would just duplicate All time.
 
-The round and Last-10 periods are aggregated **in JS, server-side** from a
-single settled-bets fetch (joined to each match's `stage`) using the same
-formulas as the `accuracy` view — no new DB view/RPC. Every period's standings
+  A pill appears only once that period has settled bets, and shows only the
+  players who predicted in it. The helpers (`periodKey` / `periodLabel` /
+  `orderPeriodKeys` / `periodNoun`) live in `src/lib/stats.ts` next to
+  `STAGE_LABELS` / `STAGE_ORDER` and are shared with `/stats`; an unknown sport
+  falls back to the football behavior.
+
+The period and Last-10 standings are aggregated **in JS, server-side** from a
+single settled-bets fetch (joined to each match's `stage` + `group_label`)
+using the same formulas as the `accuracy` view — no new DB view/RPC. Every period's standings
 are precomputed on the server and handed to `LeaderboardView`, so switching
 pills is instant (no refetch).
 
@@ -286,14 +297,18 @@ view/RPC** — everything derives from the existing `bets`, `matches`,
 Three sections:
 
 - **You** (login-gated; guests see a "log in to unlock" card) — overview tiles
-  (points, rank, win %, current/best streak, predictions), accuracy by stage,
+  (points, rank, win %, current/best streak, predictions), accuracy by period
+  (round or week, see the Leaderboard section — the card is titled "Accuracy by
+  round" / "Accuracy by week" accordingly),
   your home/draw/away pick tendencies, your record with vs. against the crowd
   plus underdog calls landed, where you rank vs. the field, and your best/
   toughest single calls.
 - **The Crowd** (public) — wisdom-of-the-crowd accuracy %, biggest upset, most
   divisive and strongest-consensus matches (as 3-way split bars), whether we're
   draw-shy, and the most-backed team.
-- **Records** (public) — longest win streak, biggest single-round haul, best
+- **Records** (public) — longest win streak, biggest single-period haul
+  ("Biggest single-round haul" for football, "…single-week haul" for hockey),
+  best
   underdog hunter, most accurate, most predictions, sharpest contrarian
   (rate-based records need at least 5 settled predictions to qualify).
 

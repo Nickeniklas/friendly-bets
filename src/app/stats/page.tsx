@@ -6,6 +6,7 @@ import { BottomNav } from "@/components/bottom-nav";
 import { StatsView } from "@/components/stats-view";
 import { getSelectedCompetition } from "@/lib/competitions";
 import {
+  periodNoun,
   related,
   computePersonalStats,
   computeCrowdFacts,
@@ -24,6 +25,18 @@ import {
 // --- Raw Supabase row shapes (to-one joins may come back as object or array,
 //     hence `related()` to normalize). ---------------------------------------
 
+// `group_label` ("Week 12") is the hockey period key — see periodKey() in
+// src/lib/stats.ts.
+type BetMatch = {
+  id: string;
+  stage: string;
+  group_label: string | null;
+  team1: string;
+  team2: string;
+  result: Pick | null;
+  kickoff_at: string;
+};
+
 type BetRow = {
   user_id: string;
   pick: Pick;
@@ -31,10 +44,7 @@ type BetRow = {
   outcome: "won" | "lost";
   ft_winner: boolean;
   placed_at: string;
-  matches:
-    | { id: string; stage: string; team1: string; team2: string; result: Pick | null; kickoff_at: string }
-    | { id: string; stage: string; team1: string; team2: string; result: Pick | null; kickoff_at: string }[]
-    | null;
+  matches: BetMatch | BetMatch[] | null;
   profiles: { display_name: string | null } | { display_name: string | null }[] | null;
 };
 
@@ -141,7 +151,10 @@ function CallList({ calls }: { calls: Call[] }) {
 
 const PICK_NAMES: Record<Pick, string> = { team1: "Home win", draw: "Draw", team2: "Away win" };
 
-function YouSection({ stats }: { stats: PersonalStats }) {
+function YouSection({ stats, sport }: { stats: PersonalStats; sport: string }) {
+  // "round" for a tournament, "week" for a league season.
+  const noun = periodNoun(sport);
+
   if (stats.totalPredictions === 0) {
     return (
       <p className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-6 text-center text-sm text-[var(--muted)]">
@@ -163,10 +176,13 @@ function YouSection({ stats }: { stats: PersonalStats }) {
         <Tile value={`${stats.totalPredictions}`} label="Predictions" />
       </div>
 
-      <Card title="Accuracy by stage" hint="How often you’ve been right in each round you predicted.">
-        {stats.byStage.map((s) => (
+      <Card
+        title={`Accuracy by ${noun}`}
+        hint={`How often you’ve been right in each ${noun} you predicted.`}
+      >
+        {stats.byPeriod.map((s) => (
           <BarRow
-            key={s.stage}
+            key={s.key}
             label={s.label}
             pct={s.winRate}
             value={`${s.winRate}% · ${s.correct}/${s.total}`}
@@ -226,7 +242,7 @@ function LoginCta() {
       <div className="mb-2 text-3xl">📈</div>
       <h2 className="mb-1 text-base font-bold">See how you stack up</h2>
       <p className="mb-4 text-sm text-[var(--muted)]">
-        Log in to unlock your personal stats — accuracy by round, your pick tendencies,
+        Log in to unlock your personal stats — accuracy by period, your pick tendencies,
         contrarian record, best calls and where you rank.
       </p>
       <Link
@@ -367,11 +383,15 @@ function RecordCard({ title, emoji, entry }: { title: string; emoji: string; ent
   );
 }
 
-function RecordsSection({ records }: { records: Records }) {
+function RecordsSection({ records, sport }: { records: Records; sport: string }) {
   return (
     <div className="grid gap-3">
       <RecordCard title="Longest win streak" emoji="🔥" entry={records.longestStreak} />
-      <RecordCard title="Biggest single-round haul" emoji="💰" entry={records.biggestHaul} />
+      <RecordCard
+        title={`Biggest single-${periodNoun(sport)} haul`}
+        emoji="💰"
+        entry={records.biggestHaul}
+      />
       <RecordCard title="Best underdog hunter" emoji="🐺" entry={records.underdogHunter} />
       <RecordCard title="Most accurate" emoji="🎯" entry={records.mostAccurate} />
       <RecordCard title="Most predictions placed" emoji="📊" entry={records.mostPredictions} />
@@ -406,7 +426,7 @@ export default async function StatsPage() {
     supabase
       .from("bets")
       .select(
-        "user_id, pick, points_awarded, outcome, ft_winner, placed_at, matches!inner(id, stage, team1, team2, result, kickoff_at, competition), profiles!inner(display_name)"
+        "user_id, pick, points_awarded, outcome, ft_winner, placed_at, matches!inner(id, stage, group_label, team1, team2, result, kickoff_at, competition), profiles!inner(display_name)"
       )
       .eq("matches.competition", competition.id)
       .in("outcome", ["won", "lost"]),
@@ -441,6 +461,7 @@ export default async function StatsPage() {
         placed_at: b.placed_at,
         matchId: m.id,
         stage: m.stage,
+        group_label: m.group_label,
         team1: m.team1,
         team2: m.team2,
         result: m.result,
@@ -470,7 +491,7 @@ export default async function StatsPage() {
 
   // Crowd + Records are league-wide and the same for everyone.
   const crowdFacts = computeCrowdFacts(counts);
-  const records = computeRecords(bets, crowdByMatch);
+  const records = computeRecords(competition.sport, bets, crowdByMatch);
 
   // Per-player (winRate, underdogHits) for the personal percentile lines.
   const fieldAgg = new Map<string, { total: number; correct: number; underdogHits: number }>();
@@ -505,6 +526,7 @@ export default async function StatsPage() {
     const rank =
       1 + profiles.filter((p) => (pointsByUser.get(p.id) ?? 0) > myPoints).length;
     const personal = computePersonalStats(
+      competition.sport,
       myBets,
       rank,
       profiles.length,
@@ -512,7 +534,7 @@ export default async function StatsPage() {
       crowdByMatch,
       field
     );
-    youContent = <YouSection stats={personal} />;
+    youContent = <YouSection stats={personal} sport={competition.sport} />;
   }
 
   return (
@@ -530,7 +552,7 @@ export default async function StatsPage() {
         <StatsView
           you={youContent}
           crowd={<CrowdSection facts={crowdFacts} />}
-          records={<RecordsSection records={records} />}
+          records={<RecordsSection records={records} sport={competition.sport} />}
         />
       </div>
 

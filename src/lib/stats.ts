@@ -26,6 +26,67 @@ export const STAGE_LABELS: Record<string, string> = {
 };
 export const STAGE_ORDER = ["group", "r32", "r16", "qf", "sf", "third_place", "final", "regular"];
 
+// --- Periods: the unit the leaderboard pills and the "biggest haul" record
+//     group by. What a "period" means depends on the sport, never on the
+//     competition id (see the note in src/lib/competitions.ts):
+//       football → matches.stage    ("Group stage", "Round of 16", …)
+//       hockey   → matches.group_label ("Week 12"), newest week first
+//     A league season has one stage ('regular') for every match, so grouping
+//     hockey by stage would give a single pill that just duplicates All time.
+//     Unknown sports fall back to the football behavior.
+
+/** The bits of a match a period is derived from. */
+export type PeriodMatch = { stage: string; group_label?: string | null };
+
+/**
+ * Which period a match belongs to, or undefined if it has none (a hockey
+ * match with no game week yet) — callers skip those bets, as they already do
+ * for any other undefined key.
+ */
+export function periodKey(sport: string, m: PeriodMatch): string | undefined {
+  if (sport === "hockey") return m.group_label ?? undefined;
+  return m.stage || undefined;
+}
+
+/** Display name for a period key ("r16" → "Round of 16"; "Week 12" as-is). */
+export function periodLabel(sport: string, key: string): string {
+  if (sport === "hockey") return key;
+  return STAGE_LABELS[key] ?? key;
+}
+
+/** The word for one period in running copy — "round" vs "week". */
+export function periodNoun(sport: string): string {
+  return sport === "hockey" ? "week" : "round";
+}
+
+/** The number in a "Week N" label, or null if it isn't shaped like one. */
+function weekNumber(key: string): number | null {
+  const m = /(\d+)/.exec(key);
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * Sort period keys into display order: football in canonical tournament order
+ * (STAGE_ORDER, unrecognized codes appended last so their data is never
+ * dropped), hockey by week number descending — the current week is the first
+ * pill after All time / Last 10. Labels that carry no number sort last.
+ */
+export function orderPeriodKeys(sport: string, keys: string[]): string[] {
+  if (sport === "hockey") {
+    return [...keys].sort((a, b) => {
+      const na = weekNumber(a);
+      const nb = weekNumber(b);
+      if (na == null && nb == null) return a.localeCompare(b);
+      if (na == null) return 1;
+      if (nb == null) return -1;
+      return nb - na;
+    });
+  }
+  const known = STAGE_ORDER.filter((s) => keys.includes(s));
+  const extra = keys.filter((k) => !STAGE_ORDER.includes(k));
+  return [...known, ...extra];
+}
+
 /**
  * Pull the single embedded row out of a Supabase to-one relation, whether it
  * came back as an object or a one-element array (its inferred types allow
@@ -56,6 +117,9 @@ export type StatsBet = {
   placed_at: string;
   matchId: string;
   stage: string;
+  // Whatever the feed calls the match's group ("Group A" for the WC, "Week 12"
+  // for Liiga) — the hockey period key, see periodKey().
+  group_label: string | null;
   team1: string;
   team2: string;
   result: Pick | null;
@@ -122,7 +186,7 @@ function pickShare(c: CrowdCount, outcome: Pick): number {
 
 // =====================  PERSONAL ("You")  ===================================
 
-export type StageStat = { stage: string; label: string; correct: number; total: number; winRate: number };
+export type PeriodStat = { key: string; label: string; correct: number; total: number; winRate: number };
 export type PickStat = { pick: Pick; count: number; correct: number; winRate: number };
 export type Call = { label: string; detail: string; points: number };
 
@@ -134,7 +198,7 @@ export type PersonalStats = {
   currentStreak: number;
   bestStreak: number;
   totalPredictions: number;
-  byStage: StageStat[];
+  byPeriod: PeriodStat[];
   picks: PickStat[];
   // Contrarian = picked against the crowd's plurality.
   contrarianCount: number;
@@ -153,8 +217,10 @@ export type PersonalStats = {
  * Everything in the "You" section, computed from one player's settled bets.
  * `crowdByMatch` gives the plurality pick per match (for contrarian splits);
  * `field` is every player's (winRate, underdogHits) for the percentile lines.
+ * `sport` decides what a period is for the accuracy breakdown (round vs week).
  */
 export function computePersonalStats(
+  sport: string,
   myBets: StatsBet[],
   rank: number,
   totalPlayers: number,
@@ -170,7 +236,7 @@ export function computePersonalStats(
   let bestStreak = 0;
   let underdogHits = 0;
 
-  const byStage = new Map<string, { correct: number; total: number }>();
+  const byPeriod = new Map<string, { correct: number; total: number }>();
   const byPick = new Map<Pick, { count: number; correct: number }>();
   let contrarianCount = 0;
   let contrarianCorrect = 0;
@@ -188,10 +254,15 @@ export function computePersonalStats(
       currentStreak = 0;
     }
 
-    const s = byStage.get(b.stage) ?? { correct: 0, total: 0 };
-    s.total += 1;
-    if (won) s.correct += 1;
-    byStage.set(b.stage, s);
+    // Bets on a match with no period (a hockey game with no game week) are
+    // simply left out of the breakdown.
+    const period = periodKey(sport, b);
+    if (period) {
+      const s = byPeriod.get(period) ?? { correct: 0, total: 0 };
+      s.total += 1;
+      if (won) s.correct += 1;
+      byPeriod.set(period, s);
+    }
 
     const p = byPick.get(b.pick) ?? { count: 0, correct: 0 };
     p.count += 1;
@@ -212,12 +283,16 @@ export function computePersonalStats(
 
   const total = chrono.length;
 
-  const stageStats: StageStat[] = [...STAGE_ORDER, ...[...byStage.keys()].filter((s) => !STAGE_ORDER.includes(s))]
-    .filter((stage) => byStage.has(stage))
-    .map((stage) => {
-      const s = byStage.get(stage)!;
-      return { stage, label: STAGE_LABELS[stage] ?? stage, correct: s.correct, total: s.total, winRate: winRate(s.correct, s.total) };
-    });
+  const periodStats: PeriodStat[] = orderPeriodKeys(sport, [...byPeriod.keys()]).map((key) => {
+    const s = byPeriod.get(key)!;
+    return {
+      key,
+      label: periodLabel(sport, key),
+      correct: s.correct,
+      total: s.total,
+      winRate: winRate(s.correct, s.total),
+    };
+  });
 
   const picks: PickStat[] = (["team1", "draw", "team2"] as Pick[]).map((pick) => {
     const p = byPick.get(pick) ?? { count: 0, correct: 0 };
@@ -255,7 +330,7 @@ export function computePersonalStats(
     currentStreak,
     bestStreak,
     totalPredictions: total,
-    byStage: stageStats,
+    byPeriod: periodStats,
     picks,
     contrarianCount,
     contrarianWinRate: winRate(contrarianCorrect, contrarianCount),
@@ -392,7 +467,11 @@ export type Records = {
 const MIN_BETS_FOR_RATE = 5;
 
 /** League-wide superlatives, each naming the record-holder. */
-export function computeRecords(bets: StatsBet[], crowdByMatch: Map<string, CrowdCount>): Records {
+export function computeRecords(
+  sport: string,
+  bets: StatsBet[],
+  crowdByMatch: Map<string, CrowdCount>
+): Records {
   type Acc = {
     name: string;
     total: number;
@@ -400,7 +479,7 @@ export function computeRecords(bets: StatsBet[], crowdByMatch: Map<string, Crowd
     underdogHits: number;
     longestStreak: number;
     runningStreak: number;
-    byStage: Map<string, number>; // Σ points per stage (for biggest single-stage haul)
+    byPeriod: Map<string, number>; // Σ points per period (for the biggest single-period haul)
     contrarianTotal: number;
     contrarianCorrect: number;
   };
@@ -418,7 +497,7 @@ export function computeRecords(bets: StatsBet[], crowdByMatch: Map<string, Crowd
         underdogHits: 0,
         longestStreak: 0,
         runningStreak: 0,
-        byStage: new Map(),
+        byPeriod: new Map(),
         contrarianTotal: 0,
         contrarianCorrect: 0,
       };
@@ -434,7 +513,8 @@ export function computeRecords(bets: StatsBet[], crowdByMatch: Map<string, Crowd
     } else {
       acc.runningStreak = 0;
     }
-    acc.byStage.set(b.stage, (acc.byStage.get(b.stage) ?? 0) + b.points_awarded);
+    const period = periodKey(sport, b);
+    if (period) acc.byPeriod.set(period, (acc.byPeriod.get(period) ?? 0) + b.points_awarded);
 
     const crowd = crowdByMatch.get(b.matchId);
     if (crowd && b.pick !== pluralityPick(crowd)) {
@@ -472,7 +552,7 @@ export function computeRecords(bets: StatsBet[], crowdByMatch: Map<string, Crowd
 
   const streakHolder = best(accs, (a) => (a.longestStreak > 0 ? a.longestStreak : null));
   const haulHolder = best(accs, (a) => {
-    const top = Math.max(0, ...a.byStage.values());
+    const top = Math.max(0, ...a.byPeriod.values());
     return top > 0 ? top : null;
   });
   const underdogHolder = best(accs, (a) => (a.underdogHits > 0 ? a.underdogHits : null));
@@ -484,16 +564,16 @@ export function computeRecords(bets: StatsBet[], crowdByMatch: Map<string, Crowd
     a.contrarianTotal >= MIN_BETS_FOR_RATE ? winRate(a.contrarianCorrect, a.contrarianTotal) : null
   );
 
-  const haulStage = (a: Acc) => {
-    let topStage = "";
+  const haulPeriod = (a: Acc) => {
+    let topKey = "";
     let topPoints = -Infinity;
-    for (const [stage, pts] of a.byStage) {
+    for (const [key, pts] of a.byPeriod) {
       if (pts > topPoints) {
         topPoints = pts;
-        topStage = stage;
+        topKey = key;
       }
     }
-    return { stage: STAGE_LABELS[topStage] ?? topStage, points: topPoints };
+    return { label: periodLabel(sport, topKey), points: topPoints };
   };
 
   return {
@@ -502,8 +582,8 @@ export function computeRecords(bets: StatsBet[], crowdByMatch: Map<string, Crowd
       : null,
     biggestHaul: haulHolder
       ? (() => {
-          const h = haulStage(haulHolder);
-          return { name: haulHolder.name, value: `${h.points} pts`, sub: h.stage };
+          const h = haulPeriod(haulHolder);
+          return { name: haulHolder.name, value: `${h.points} pts`, sub: h.label };
         })()
       : null,
     underdogHunter: underdogHolder

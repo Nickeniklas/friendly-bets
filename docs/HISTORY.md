@@ -1448,3 +1448,74 @@ render of the ICO is legible. A circular crop of `maskable-512.png` keeps the wh
 inside the safe-zone circle. On `/matches` (Liiga, dark), TPS shows on its light circle and
 Lukko shows its gold logo with no circle. In light mode there's no backing. World Cup flags
 still render as plain 4:3 images with no wrapper.
+
+## Post-v1 — weekly leaderboard periods for hockey (2026-09-20)
+
+### The problem
+The leaderboard's period pills and the `/stats` "biggest single-round haul" record both
+grouped by `matches.stage`. For the World Cup that's the tournament round and works well.
+For a league season every match has `stage = 'regular'`, so Liiga got a single "Regular
+season" pill that just duplicated All time, and the haul record was simply each player's
+all-time total. The `/stats` "You" accuracy-by-stage card had the same one-bucket problem.
+
+The Liiga parser already stores the game week in `matches.group_label` as `"Week N"`
+(`src/lib/liiga.ts`), so the fix needed **no migration and no parser change** — only a
+different grouping key.
+
+### The idea: a per-competition "period"
+A **period** is the unit the leaderboard pills, the haul record and the personal accuracy
+breakdown group by. What it means is chosen from `competitions.sport` (never a competition
+id — see the note in `src/lib/competitions.ts`):
+
+- **football** → `matches.stage`, labelled/ordered by `STAGE_LABELS` / `STAGE_ORDER`
+  (exactly the previous behavior);
+- **hockey** → `matches.group_label` (`"Week 12"`), labelled as-is and ordered by the
+  number in the label **newest first**, so the current week is the first pill after
+  All time / Last 10;
+- an unknown sport falls back to the football behavior.
+
+Bets on a match with no period (a hockey game with no game week yet) are skipped, the same
+way an undefined key already was.
+
+### The helper (`src/lib/stats.ts`)
+Lives next to `STAGE_LABELS` / `STAGE_ORDER` since both the leaderboard and stats use it:
+
+- `periodKey(sport, { stage, group_label })` → the key, or `undefined`;
+- `periodLabel(sport, key)` → `"Round of 16"` / `"Week 12"`;
+- `periodNoun(sport)` → `"round"` / `"week"`, for UI copy;
+- `orderPeriodKeys(sport, keys)` → display order. Football keeps the old rule (canonical
+  `STAGE_ORDER`, unrecognized codes appended last so their data is never dropped); hockey
+  sorts by the number in the label descending, with number-less labels last.
+
+### Leaderboard (`src/app/leaderboard/page.tsx`)
+`group_label` was added to the `matches!inner(...)` select and to `SettledBetRow` (the
+embedded shape is now a named `MatchRef`). `buildRowsByKey`'s `keyOf` is
+`periodKey(competition.sport, match)`, and the old
+`[...STAGE_ORDER, ...extraStages]` loop is now `orderPeriodKeys(competition.sport, keys)`.
+Its internals were renamed stage → key, since the grouping key is no longer a stage.
+`LeaderboardView`'s empty state reads "No settled predictions in this period yet." The
+`key={competition.id}` that resets the selection when switching competitions is unchanged.
+
+### Stats (`src/lib/stats.ts` + `src/app/stats/page.tsx`)
+`StatsBet` gained `group_label` (added to the bets select and the flattening).
+`computeRecords(sport, …)` and `computePersonalStats(sport, …)` now take the sport:
+the record accumulator's `byStage` became `byPeriod` (Σ points per period), so hockey's
+"biggest haul" is a per-week max, and `PersonalStats.byStage: StageStat[]` became
+`byPeriod: PeriodStat[]` (`{ key, label, correct, total, winRate }`, in `orderPeriodKeys`
+order). In the UI, the record card title and the "You" card title/hint are built from
+`periodNoun(sport)` — "Biggest single-week haul" / "Accuracy by week" for hockey,
+"…single-round…" / "Accuracy by round" for football. The login CTA's "accuracy by round"
+became "accuracy by period". No other stat changed — in particular the crowd facts still
+key off `stage`, as before.
+
+### Verification
+`npx tsc --noEmit` and `npx eslint src` clean. The pure helpers were exercised directly
+(bundled with esbuild, run under node): `orderPeriodKeys("hockey", ["Week 1","Week 10",
+"Week 2","Playoffs"])` → `Week 10, Week 2, Week 1, Playoffs`; `orderPeriodKeys("football",
+["final","group","weird"])` → `group, final, weird`; `periodKey("hockey", …)` returns the
+week, `undefined` for a null `group_label`, and the stage for an unknown sport. On a
+4-bet fixture (Week 1: +10/−5, Week 2: +15, no week: +10) `computeRecords("hockey", …)`
+reports 15 pts · Week 2 while `computeRecords("football", …)` reports the unchanged
+all-stage 30 pts · Regular season, and `computePersonalStats("hockey", …).byPeriod` is
+Week 2 (100%, 1/1) then Week 1 (50%, 1/2). The live pages were **not** checked against the
+database in this session — no dev server was run.

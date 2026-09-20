@@ -4,7 +4,7 @@ import { AppHeader } from "@/components/app-header";
 import { BottomNav } from "@/components/bottom-nav";
 import { type LeaderboardRow } from "@/components/leaderboard-table";
 import { LeaderboardView, type Period } from "@/components/leaderboard-view";
-import { STAGE_LABELS, STAGE_ORDER, related } from "@/lib/stats";
+import { orderPeriodKeys, periodKey, periodLabel, related } from "@/lib/stats";
 import { getSelectedCompetition } from "@/lib/competitions";
 
 type PointsEntry = {
@@ -15,25 +15,29 @@ type PointsEntry = {
 
 type ProfileEntry = { id: string; display_name: string | null };
 
-// One settled bet joined to its match's round and the bettor's name. Supabase
-// returns the embedded relations as an object for to-one joins, but its
-// inferred types can also be an array — `related()` below normalizes both.
+// The match fields a settled bet is grouped by: `stage` for football rounds,
+// `group_label` ("Week 12") for hockey — see periodKey() in src/lib/stats.ts.
+type MatchRef = { stage: string; group_label: string | null; competition: string };
+
+// One settled bet joined to its match's period fields and the bettor's name.
+// Supabase returns the embedded relations as an object for to-one joins, but
+// its inferred types can also be an array — `related()` below normalizes both.
 type SettledBetRow = {
   user_id: string;
   points_awarded: number;
   outcome: "won" | "lost";
   placed_at: string;
-  matches: { stage: string; competition: string } | { stage: string; competition: string }[] | null;
+  matches: MatchRef | MatchRef[] | null;
   profiles: { display_name: string | null } | { display_name: string | null }[] | null;
 };
 
-// STAGE_LABELS / STAGE_ORDER (round names + canonical order) and `related()`
-// (Supabase to-one join normalizer) are shared with the /stats tab — see
-// src/lib/stats.ts.
+// The period helpers (periodKey / periodLabel / orderPeriodKeys — what a
+// leaderboard pill groups by, per sport) and `related()` (Supabase to-one join
+// normalizer) are shared with the /stats tab — see src/lib/stats.ts.
 
 /**
  * Aggregate settled bets into leaderboard rows, grouped by `keyOf(bet)` (e.g.
- * the round, or one constant key for the whole competition), using the same
+ * the period, or one constant key for the whole competition), using the same
  * formulas as the `accuracy` view: points = Σ points_awarded, bets = count,
  * correct/wrong by outcome, win% = round(correct/total*100, 1), streak =
  * consecutive wins from the most recent bet. Returns one sorted (points desc)
@@ -52,15 +56,15 @@ function buildRowsByKey(
     wrong: number;
     history: { outcome: "won" | "lost"; placed_at: string }[];
   };
-  const byStage = new Map<string, Map<string, Acc>>();
+  const byKey = new Map<string, Map<string, Acc>>();
 
   for (const b of bets) {
-    const stage = keyOf(b);
-    if (!stage) continue;
-    let users = byStage.get(stage);
+    const key = keyOf(b);
+    if (!key) continue;
+    let users = byKey.get(key);
     if (!users) {
       users = new Map();
-      byStage.set(stage, users);
+      byKey.set(key, users);
     }
     let acc = users.get(b.user_id);
     if (!acc) {
@@ -81,7 +85,7 @@ function buildRowsByKey(
   }
 
   const result = new Map<string, LeaderboardRow[]>();
-  for (const [stage, users] of byStage) {
+  for (const [key, users] of byKey) {
     const rows: LeaderboardRow[] = [];
     for (const acc of users.values()) {
       const total = acc.correct + acc.wrong;
@@ -109,14 +113,14 @@ function buildRowsByKey(
       });
     }
     rows.sort((a, b) => b.points_balance - a.points_balance);
-    result.set(stage, rows);
+    result.set(key, rows);
   }
   return result;
 }
 
 /**
  * "Recent form": for each player, aggregate only their most recent `limit`
- * settled bets (across all rounds, newest first). Same formulas as
+ * settled bets (across all periods, newest first). Same formulas as
  * buildRowsByKey. Returns rows sorted by points desc; players with no settled
  * bets are omitted.
  */
@@ -331,7 +335,7 @@ export default async function LeaderboardPage() {
     supabase
       .from("bets")
       .select(
-        "user_id, points_awarded, outcome, placed_at, matches!inner(stage, competition), profiles!inner(display_name)"
+        "user_id, points_awarded, outcome, placed_at, matches!inner(stage, group_label, competition), profiles!inner(display_name)"
       )
       .eq("matches.competition", competition.id)
       .in("outcome", ["won", "lost"]),
@@ -371,12 +375,17 @@ export default async function LeaderboardPage() {
       })),
   ].sort((a, b) => b.points_balance - a.points_balance);
 
-  // Per-round standings (only players who had a settled bet that round).
-  const stageRows = buildRowsByKey(allSettledBets, (b) => related(b.matches)?.stage);
+  // Per-period standings (only players who had a settled bet in that period).
+  // A period is a tournament round for football and a game week for hockey.
+  const periodRows = buildRowsByKey(allSettledBets, (b) => {
+    const m = related(b.matches);
+    return m && periodKey(competition.sport, m);
+  });
 
-  // Period selector options: All time first, then each round that has any
-  // settled bets, in canonical tournament order. Any unrecognized stage code
-  // (a mapStage fallback slug) is appended last so its data is never dropped.
+  // Period selector options: All time first, then each period that has any
+  // settled bets, in display order (tournament order for football, newest week
+  // first for hockey). Unrecognized keys are never dropped — see
+  // orderPeriodKeys().
   const periods: Period[] = [
     { key: "all", label: "All time", podium: renderPodium(rows), rows },
   ];
@@ -393,15 +402,14 @@ export default async function LeaderboardPage() {
     });
   }
 
-  const extraStages = [...stageRows.keys()].filter((s) => !STAGE_ORDER.includes(s));
-  for (const stage of [...STAGE_ORDER, ...extraStages]) {
-    const sRows = stageRows.get(stage);
-    if (!sRows || sRows.length === 0) continue;
+  for (const key of orderPeriodKeys(competition.sport, [...periodRows.keys()])) {
+    const pRows = periodRows.get(key);
+    if (!pRows || pRows.length === 0) continue;
     periods.push({
-      key: stage,
-      label: STAGE_LABELS[stage] ?? stage,
-      podium: renderPodium(sRows),
-      rows: sRows,
+      key,
+      label: periodLabel(competition.sport, key),
+      podium: renderPodium(pRows),
+      rows: pRows,
     });
   }
 
@@ -420,9 +428,9 @@ export default async function LeaderboardPage() {
         {rows.length === 0 ? (
           <p className="mb-7 text-sm text-[var(--muted)]">No players yet.</p>
         ) : (
-          // Period selector (All time + per round) wrapping the podium + table.
-          // Keyed by competition so switching competitions resets the selected
-          // period (a WC round key wouldn't exist for Liiga).
+          // Period selector (All time + per round/week) wrapping the podium +
+          // table. Keyed by competition so switching competitions resets the
+          // selected period (a WC round key wouldn't exist for Liiga).
           <LeaderboardView key={competition.id} periods={periods} />
         )}
       </div>

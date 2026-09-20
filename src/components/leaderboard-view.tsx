@@ -4,14 +4,15 @@ import { useState, type ReactNode } from "react";
 import { LeaderboardTable, type LeaderboardRow } from "@/components/leaderboard-table";
 
 /**
- * One selectable period (all-time or a single tournament round). The podium is
+ * One selectable period (all-time, recent form, or a single round/game week —
+ * see periodKey() in src/lib/stats.ts). The podium is
  * rendered server-side and passed in as a ReactNode (so PodiumColumn stays on
  * the server — same trick MatchesTabs uses for its tab content), while the
  * table rows are plain data handed to the client-side LeaderboardTable.
  */
 export type Period = {
-  key: string; // "all" | "group" | "r16" | ...
-  label: string; // "All time" | "Group stage" | ...
+  key: string; // "all" | "group" | "r16" | "Week 12" | ...
+  label: string; // "All time" | "Group stage" | "Week 12" | ...
   podium: ReactNode; // top-3 podium, or null if the period has < 3 players
   rows: LeaderboardRow[];
 };
@@ -29,7 +30,7 @@ export function LeaderboardView({ periods }: { periods: Period[] }) {
   return (
     <div>
       {/* Segmented pill selector — sits between the podium and the table.
-          Scrolls horizontally if there are more rounds than fit on one line. */}
+          Scrolls horizontally if there are more periods than fit on one line. */}
       <div className="mb-6 flex gap-1 overflow-x-auto rounded-full bg-[var(--surface-2)] p-1">
         {periods.map((p) => {
           const isActive = p.key === active;
@@ -63,7 +64,7 @@ export function LeaderboardView({ periods }: { periods: Period[] }) {
         </>
       ) : (
         <p className="mt-2 text-sm text-[var(--muted)]">
-          No settled predictions in this round yet.
+          No settled predictions in this period yet.
         </p>
       )}
     </div>

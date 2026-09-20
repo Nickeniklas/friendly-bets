@@ -50,7 +50,7 @@ openfootball and are frozen).
 | team1 | text | home team |
 | team2 | text | away team |
 | kickoff_at | timestamptz | betting closes at this time |
-| group_label | text | e.g. "Group A" (WC), "Week 3" (Liiga) |
+| group_label | text | e.g. "Group A" (WC), "Week 3" (Liiga) — the hockey leaderboard/stats period key, see `periodKey()` in `src/lib/stats.ts` |
 | stage | text | WC: group / r32 / r16 / qf / sf / third_place / final; leagues: `regular` |
 | status | text | `scheduled` → `closed` → `settled` |
 | result | text | `team1` / `team2` / `draw` / null until played |
