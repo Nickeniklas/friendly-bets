@@ -450,11 +450,13 @@ start on these without being asked.
   balances, resets bets, sets `status='closed'`, `settled_at`/`result`/`result_ft`
   NULL — result is cleared so a failed feed tick can't re-settle on the stale
   `draw`). Dry run 2026-10-16: 21 games, 36 bets, 4 players, net −120 pts to reverse,
-  0 ft_winner bets. **Manual steps, in order:** (1) apply the migration; (2) deploy
-  (push to `main` → Vercel); (3) paste `resettle_liiga_ot.sql` into the SQL editor
-  (dry-run SELECT is in its header); (4) trigger `/api/sync` (cron-job.org "Run now").
-  Running the script before the deploy would let the old parser re-settle the same
-  wrong way. See `docs/HISTORY.md`.
+  0 ft_winner bets. Rollout order was: (1) apply the migration; (2) deploy (push to
+  `main` → Vercel); (3) paste `resettle_liiga_ot.sql` into the SQL editor (dry-run
+  SELECT is in its header); (4) trigger `/api/sync`. Running the script before the
+  deploy would let the old parser re-settle the same wrong way. **DONE 2026-10-16** —
+  all four steps run; verified live: all 21 `liiga-2027` OT/SO games are settled
+  again with `result_ft = draw`, and their 36 bets re-graded (19 won, 17 lost). See
+  `docs/HISTORY.md`.
 - **NHL 2026–27 (2026-10-16)** — a second hockey competition, inheriting every hockey
   feature through `sport` (no page or trigger change needed). Migration
   `20261016120000_nhl_competition.sql` = one INSERT (`nhl-2027`, hockey, active,
@@ -469,10 +471,13 @@ start on these without being asked.
   (light + dark) + generated `src/lib/team-logos-nhl.ts`; the Liiga map moved to
   `src/lib/team-logos-liiga.ts`, and `teamLogo(competition, team)` in
   `src/lib/team-logos.ts` scopes lookups per competition (`Flag` now takes
-  `competition`). **Manual steps, in order:** (1) apply the migration; (2) deploy
-  (push to `main`); (3) trigger `/api/sync`. The migration must land first: an NHL
-  row with an unknown competition id fails the FK and with it the whole combined
-  upsert (Liiga included) for that tick. See `docs/HISTORY.md`.
+  `competition`). Committed in `4d644a9`. Rollout order was: (1) apply the
+  migration; (2) deploy (push to `main`); (3) trigger `/api/sync` — the migration
+  must land first: an NHL row with an unknown competition id fails the FK and with it
+  the whole combined upsert (Liiga included) for that tick. **DONE 2026-10-16** —
+  migration applied, deployed, first sync ran; verified live: 197 `nhl-2027` rows,
+  102 settled (no bets on them, so no points moved). The UI hasn't been eyeballed
+  in a browser yet. See `docs/HISTORY.md`.
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.

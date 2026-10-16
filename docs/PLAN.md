@@ -1,8 +1,10 @@
 # World Cup 2026 Prediction Game — PLAN
 
 > **Note (2026-09-18):** this is the original design for the World Cup. The app has
-> since become multi-competition, and the active competition is the Liiga 2026–27
-> regular season (ice hockey, data from liiga.fi, graded on the 60-minute result).
+> since become multi-competition: the active competitions are the NHL 2026–27 (default,
+> since 2026-10-16) and Liiga 2026–27 regular seasons (ice hockey; data from
+> api-web.nhle.com and liiga.fi). Hockey pays the final winner (incl. OT/SO) and a draw
+> pick on a game tied after 60′, plus a strict "Win in 60′" (+5) pick.
 > The design below still applies to the game itself; for the current state see
 > `CLAUDE.md` Status and `docs/SCHEMA.md` (`competitions` table).
 

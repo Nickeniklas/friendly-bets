@@ -1598,6 +1598,11 @@ et 2–1; SO `liiga-2701280` Sport–Jokerit 4–4 → 5–4 SO → `team1`/`dra
 `result = result_ft`, and every OT/SO game has `result_ft = draw` + a winner. The UI was
 **not** checked in a browser, and the migration/script have not been applied.
 
+**Rollout (same day, DONE).** Migration applied, deployed, `resettle_liiga_ot.sql` run,
+`/api/sync` triggered. Verified live afterwards: all 21 `liiga-2027` games with
+`et_team1` set are `settled` again with `result_ft = draw`, and their 36 bets are
+re-graded (19 won, 17 lost, +105 points net).
+
 ## Post-v1 — NHL 2026–27 as a new competition (2026-10-16)
 
 **Competition.** Migration `20261016120000_nhl_competition.sql` inserts
@@ -1649,3 +1654,9 @@ live feed (transpiled with `typescript`, run under node) on 2026-10-16: BUF@TOR 
 window: 197 games (78 REG, 14 OT, 10 SO, 95 FUT), all external_refs unique, all 102
 finished games graded, no guard hits, Weeks 1–5. The UI was **not** checked in a
 browser, and the migration has not been applied.
+
+**Rollout (same day, DONE).** Committed as `4d644a9` and pushed; migration applied
+(`npx supabase db push`); first sync ran. Verified live via the public API: the
+`competitions` order is `nhl-2027` (0) / `liiga-2027` (1) / `wc2026` (2), and there
+are 197 `nhl-2027` match rows, 102 of them settled. Those games had no bets, so no
+points moved. The UI still hasn't been checked in a browser.

@@ -110,11 +110,11 @@ exactly why the scoring design needs no oddsmaking).
 - No test suite — verify with `npx tsc --noEmit` + eslint.
 
 ## Open items
-- NHL 2026–27 (2026-10-16): code done; manual rollout (migration
-  `20261016120000_nhl_competition.sql` → deploy → `/api/sync`) is in CLAUDE.md Status.
-- Hockey OT/SO grading + "Win in 60′" (2026-10-16): code done; the manual rollout
-  (migration → deploy → `supabase/scripts/resettle_liiga_ot.sql` → `/api/sync`) is in
-  CLAUDE.md Status.
+- None pending. Both 2026-10-16 changes are fully rolled out and verified live:
+  hockey OT/SO grading + "Win in 60′" (migration, deploy, `resettle_liiga_ot.sql` —
+  21 Liiga games / 36 bets re-graded — and a sync), and NHL 2026–27 (migration,
+  deploy, first sync: 197 games, 102 settled). The NHL UI hasn't been eyeballed in a
+  browser yet.
 
 ## v3 ideas (backlog — don't start without being asked)
 - Liiga / NHL playoffs (series format — not yet looked at).
