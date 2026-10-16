@@ -1519,3 +1519,22 @@ reports 15 pts · Week 2 while `computeRecords("football", …)` reports the unc
 all-stage 30 pts · Regular season, and `computePersonalStats("hockey", …).byPeriod` is
 Week 2 (100%, 1/1) then Week 1 (50%, 1/2). The live pages were **not** checked against the
 database in this session — no dev server was run.
+
+## Post-v1 — upstream fetch timeout in `/api/sync` (2026-10-16)
+
+One cron-job.org run timed out at its 30 s limit with no errors in the Vercel logs;
+the likely cause was the liiga.fi fetch hanging. The Liiga fetch already had a 15 s
+`AbortSignal.timeout`, which still left too little headroom for the DB upsert and
+settlement. Now every upstream feed fetch (`fetchLiigaGames`, and
+`fetchWorldCupMatches` in case openfootball is re-enabled) uses
+`AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)`, a shared 8 s constant exported from
+`src/lib/openfootball.ts`.
+
+In the route's per-feed loop, a `TimeoutError`/`AbortError` is now caught separately:
+it is logged with `console.error`, the feed is skipped, and the run carries on (other
+feeds, the upsert, settlement) as before. At the end the route returns **504**
+`{ error: "upstream timeout", feed: "<name>", synced, settled, … }` instead of 200, so
+cron-job.org flags the run. Other feed errors keep their old handling (logged, listed in
+`feedErrors`, 200). Settlement, `settle_match` and the auth check are unchanged.
+Verified with `npx tsc --noEmit` and `npm run lint` (both clean); the timeout path was not
+exercised against a real hanging upstream.

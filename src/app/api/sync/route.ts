@@ -47,10 +47,19 @@ export async function GET(request: NextRequest) {
   ];
   const rows: MatchRow[] = [];
   const feedErrors: { feed: string; error: string }[] = [];
+  const timedOutFeeds: string[] = [];
   for (const feed of feeds) {
     try {
       rows.push(...(await feed.load()));
     } catch (err) {
+      // AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) on the fetch rejects with a
+      // "TimeoutError" (older runtimes: "AbortError"). Record it separately so
+      // the run ends with a 504, but keep going like any other feed failure.
+      if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
+        console.error(`[sync] ${feed.name} feed timed out, skipping this tick`);
+        timedOutFeeds.push(feed.name);
+        continue;
+      }
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[sync] ${feed.name} feed failed, skipping this tick: ${message}`);
       feedErrors.push({ feed: feed.name, error: message });
@@ -147,10 +156,21 @@ export async function GET(request: NextRequest) {
     settledIds.push(id);
   }
 
-  return NextResponse.json({
+  const summary = {
     synced: rows.length,
     settled: settledIds,
     ...(failed.length > 0 ? { failed } : {}),
     ...(feedErrors.length > 0 ? { feedErrors } : {}),
-  });
+  };
+
+  // An upstream timeout is reported as a 504 so cron-job.org flags the run,
+  // even though the other feeds and settlement above still ran.
+  if (timedOutFeeds.length > 0) {
+    return NextResponse.json(
+      { error: "upstream timeout", feed: timedOutFeeds.join(","), ...summary },
+      { status: 504 }
+    );
+  }
+
+  return NextResponse.json(summary);
 }

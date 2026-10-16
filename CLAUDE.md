@@ -25,7 +25,11 @@ selectable — see the 2026-09-18 "Liiga" entry at the end of this list.
 - Supabase schema, RPC (`settle_match`), `accuracy` view, RLS, and GRANTs are applied.
 - `/api/sync` is deployed, protected by `SYNC_SECRET`, and triggered every 5 minutes by
   cron-job.org (syncs fixtures/results and auto-settles finished matches — Liiga
-  since 2026-09-18; openfootball for the WC before that).
+  since 2026-09-18; openfootball for the WC before that). cron-job.org times the
+  run out at 30 s, so every upstream feed fetch is capped at `UPSTREAM_TIMEOUT_MS`
+  (8 s, `src/lib/openfootball.ts`); a timed-out feed is skipped, the rest of the
+  run (other feeds + settlement) still happens, and the response is a 504
+  `{ error: "upstream timeout", feed: "liiga", … }` (2026-10-16).
 - Magic-link auth (`/login`, `/auth/confirm`, sign-out) works via custom SMTP (Brevo).
 - `/matches` splits all fixtures into Upcoming/Live/Past tabs, date-grouped under sticky
   headers, with a three-way pick (home/draw/away) per bettable match and a crowd-split

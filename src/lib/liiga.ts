@@ -11,7 +11,7 @@
  * overtime or the shootout. So result = result_ft = the regulation outcome and
  * settle_match needs no hockey-specific logic.
  */
-import type { MatchRow } from "@/lib/openfootball";
+import { UPSTREAM_TIMEOUT_MS, type MatchRow } from "@/lib/openfootball";
 
 /** The competitions.id these rows belong to. */
 export const LIIGA_COMPETITION_ID = "liiga-2027";
@@ -60,8 +60,8 @@ export interface LiigaGame {
 export async function fetchLiigaGames(): Promise<LiigaGame[]> {
   const res = await fetch(LIIGA_GAMES_URL, {
     cache: "no-store",
-    // Don't let a hung upstream eat the whole cron run.
-    signal: AbortSignal.timeout(15_000),
+    // Don't let a hung upstream eat the whole cron run (see UPSTREAM_TIMEOUT_MS).
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
   });
   if (!res.ok) {
     throw new Error(`Failed to fetch Liiga games: ${res.status} ${res.statusText}`);

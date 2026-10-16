@@ -6,6 +6,13 @@
  * for our `matches` table — it doesn't talk to Supabase.
  */
 
+/**
+ * Max time for any upstream feed fetch made by /api/sync (shared with
+ * src/lib/liiga.ts). cron-job.org gives the whole sync run 30 s, so a hung
+ * upstream must fail fast and leave time for the DB upsert + settlement.
+ */
+export const UPSTREAM_TIMEOUT_MS = 8000;
+
 const WORLDCUP_JSON_URL =
   "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json";
 
@@ -76,7 +83,10 @@ export interface MatchRow {
 }
 
 export async function fetchWorldCupMatches(): Promise<OpenFootballMatch[]> {
-  const res = await fetch(WORLDCUP_JSON_URL, { cache: "no-store" });
+  const res = await fetch(WORLDCUP_JSON_URL, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+  });
   if (!res.ok) {
     throw new Error(
       `Failed to fetch openfootball data: ${res.status} ${res.statusText}`
