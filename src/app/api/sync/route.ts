@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { type MatchRow } from "@/lib/openfootball";
 import { fetchLiigaGames, toLiigaMatchRow } from "@/lib/liiga";
+import { fetchNhlGames, toNhlMatchRow } from "@/lib/nhl";
 
 // Always run live — this hits an external feed and writes to the DB, so it
 // must never be served from Next.js's cache.
@@ -18,7 +19,7 @@ const SETTLE_DELAY_HOURS = 3;
  * Protected sync + auto-settle job, triggered every 5 minutes by an external
  * scheduler (cron-job.org), per CLAUDE.md / docs/PLAN.md.
  *
- * 1. Pull each active fixture/results feed (currently Liiga) and upsert into `matches`.
+ * 1. Pull each active fixture/results feed (currently NHL + Liiga) and upsert into `matches`.
  * 2. Find matches with a result, kicked off >3h ago, not yet settled.
  * 3. Call the `settle_match` RPC for each (idempotent — safe to repeat).
  */
@@ -33,25 +34,31 @@ export async function GET(request: NextRequest) {
   const supabase = createAdminClient();
 
   // --- 1. Sync fixtures/results -------------------------------------------------
-  // Active feeds: Liiga only. The World Cup is over and its rows are frozen, so
+  // Active feeds: NHL and Liiga. The World Cup is over and its rows are frozen, so
   // openfootball is no longer fetched — `fetchWorldCupMatches` / `toMatchRow`
   // are kept in src/lib/openfootball.ts. To re-enable, add a feed entry:
   //   { name: "openfootball", load: async () => (await fetchWorldCupMatches()).map(toMatchRow) }
-  // A new league (e.g. NHL) = a parser in src/lib + one more entry here.
+  // A new league = a parser in src/lib + one more entry here.
   //
   // Each feed is fetched independently: if one fails (network, upstream
   // outage, shape change) it's logged and skipped for this tick, and the rest
   // of the job — including settling already-synced matches — still runs.
+  // Feeds load in parallel so two slow upstreams cost one UPSTREAM_TIMEOUT_MS
+  // of the 30 s cron budget, not two.
   const feeds: { name: string; load: () => Promise<MatchRow[]> }[] = [
+    { name: "nhl", load: async () => (await fetchNhlGames()).map(toNhlMatchRow) },
     { name: "liiga", load: async () => (await fetchLiigaGames()).map(toLiigaMatchRow) },
   ];
   const rows: MatchRow[] = [];
   const feedErrors: { feed: string; error: string }[] = [];
   const timedOutFeeds: string[] = [];
-  for (const feed of feeds) {
-    try {
-      rows.push(...(await feed.load()));
-    } catch (err) {
+  const loaded = await Promise.allSettled(feeds.map((feed) => feed.load()));
+  for (const [i, outcome] of loaded.entries()) {
+    const feed = feeds[i];
+    if (outcome.status === "fulfilled") {
+      rows.push(...outcome.value);
+    } else {
+      const err: unknown = outcome.reason;
       // AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) on the fetch rejects with a
       // "TimeoutError" (older runtimes: "AbortError"). Record it separately so
       // the run ends with a 504, but keep going like any other feed failure.

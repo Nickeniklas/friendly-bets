@@ -1597,3 +1597,55 @@ et 2–1; SO `liiga-2701280` Sport–Jokerit 4–4 → 5–4 SO → `team1`/`dra
 104 finished games: `result` matches the final goals, regulation games have
 `result = result_ft`, and every OT/SO game has `result_ft = draw` + a winner. The UI was
 **not** checked in a browser, and the migration/script have not been applied.
+
+## Post-v1 — NHL 2026–27 as a new competition (2026-10-16)
+
+**Competition.** Migration `20261016120000_nhl_competition.sql` inserts
+`nhl-2027` / "NHL 2026–27" / `hockey` / active / `sort_order 0`, ahead of Liiga (1) and
+the WC (2), so it is the default for visitors without the `fb-competition` cookie and
+the first dropdown entry. No schema change was needed: the `enforce_bet_window` trigger
+already allows `ft_winner` by `competitions.sport = 'hockey'` (2026-10-16 migration),
+and `settle_match` is unchanged.
+
+**Feed.** `src/lib/nhl.ts` mirrors `liiga.ts`. Source:
+`api-web.nhle.com/v1/schedule/{date}` (public, unofficial, 7 days per call).
+`fetchNhlGames()` fetches today−14 / −7 / 0 / +7 in parallel, dedupes by id, keeps
+`gameType = 2`. `external_ref = nhl-{id}`, team1 = home (the feed lists away first),
+names from `commonName.default`, `group_label` = "Week N" (`nhlWeekLabel()`:
+Monday-start weeks in Helsinki time, Week 1 starting Monday 2026-09-28, the week of
+`regularSeasonStartDate`). Results only for `gameState` OFF/FINAL. The schedule has no
+period scores, so regulation is reconstructed from `gameOutcome.lastPeriodType`: REG →
+ft = final; OT → ft = loser–loser, et = final; SO → ft = loser–loser, p = 1–0 to the
+winner (the NHL adds one goal to the shootout winner). OT/SO with a margin other than 1
+is logged and left ungraded. `/api/sync` gained an `nhl` feed entry, and feeds now load
+in parallel (`Promise.allSettled`) so two slow upstreams cost one 8 s timeout of the
+30 s cron budget; the per-feed error/timeout handling is unchanged.
+
+**Logos.** `scripts/copy-nhl-logos.mjs` walks the schedule from the season start until
+it has all 32 teams, downloads `logo` + `darkLogo` SVGs into `public/teams/nhl/`
+(rejecting anything containing `<script`/event handlers) and generates
+`src/lib/team-logos-nhl.ts`. The logo lookup is now scoped per competition: the
+generated Liiga map moved to `src/lib/team-logos-liiga.ts` (`LIIGA_TEAM_LOGOS`;
+`copy-team-logos.mjs` updated to write there), and the hand-written
+`src/lib/team-logos.ts` exports `teamLogo(competition, team)`. `Flag` takes a
+`competition` prop (passed through `MatchCard` → `OutcomeButton`) and sets
+`unoptimized` for SVGs. Every NHL team has a dark variant, so dark mode uses it instead
+of the near-white circle.
+
+**Sport audit.** Nothing hockey-specific was keyed on `liiga-2027`: strict-mode
+availability and copy (`strictModeAvailable`, `STRICT_MODE_COPY`), the OT/SO score
+notes and "Draw after 60′ · X won in OT/SO" label (`matchScore`/`statusInfo`), the
+intro-card hockey step, weekly periods (`periodKey` on `group_label`) and `/stats`, and
+the 🏒 icon all key off `sport`; dropdown order is `sort_order`. Only comments were
+touched. The hockey intro card shares one localStorage key across hockey leagues, so
+someone who dismissed it on Liiga won't see it again on NHL (same rules, intended).
+
+### Verification
+`npx tsc --noEmit` and `npx eslint src scripts` clean. The parser was run against the
+live feed (transpiled with `typescript`, run under node) on 2026-10-16: BUF@TOR 5–4 OT
+→ `nhl-2026020108` Maple Leafs (team1) vs Sabres, result `team2`, result_ft `draw`, ft
+4–4, et 4–5; NYI@OTT 1–2 SO → Senators (team1), `team1`/`draw`, ft 1–1, p 1–0; NYR@NJD
+1–7 REG → Devils (team1), `team1`/`team1`, ft 7–1; a FUT game → all null. Full 4-week
+window: 197 games (78 REG, 14 OT, 10 SO, 95 FUT), all external_refs unique, all 102
+finished games graded, no guard hits, Weeks 1–5. The UI was **not** checked in a
+browser, and the migration has not been applied.

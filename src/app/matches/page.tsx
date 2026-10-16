@@ -112,7 +112,7 @@ function statusInfo(
     const winner =
       match.result === "team1" ? match.team1 : match.result === "team2" ? match.team2 : null;
     if (match.result_ft === "draw" && winner) {
-      // The Liiga parser only sets p_* for a game decided in the shootout.
+      // The hockey parsers (Liiga, NHL) only set p_* for a game decided in the shootout.
       const how = match.p_team1 != null ? "SO" : "OT";
       return { label: `Draw after 60′ · ${winner} won in ${how}`, color: "gold" };
     }
@@ -149,11 +149,12 @@ function matchScore(match: Match, sport: string): MatchScore | undefined {
   // Hockey: the headline is ALWAYS the 60-minute (regulation) score, because
   // that's what 'draw' and "Win in 60′" picks are graded on — a 2–2 headline
   // means Draw won (as did standard picks on the OT/SO winner). The note
-  // carries the final score and how it was decided. The Liiga parser sets et_*
-  // for any game that went past regulation (OT or shootout) and p_* only for a
-  // shootout, where p_* is the shootout "period" decider (e.g. 1–0) — liiga.fi
-  // counts the final score as regulation + that decider (OT is scoreless in a
-  // game that reaches a shootout).
+  // carries the final score and how it was decided. The hockey parsers set p_*
+  // only for a shootout, where it's the shootout "period" decider (e.g. 1–0) —
+  // liiga.fi and the NHL both count the final score as regulation + that
+  // decider (OT is scoreless in a game that reaches a shootout) — so p_* is
+  // checked first. et_* is the final after an OT winner (Liiga also fills it,
+  // as the still-tied score, for a shootout game; the NHL parser doesn't).
   if (sport === "hockey") {
     const home = match.ft_team1;
     const away = match.ft_team2;
@@ -359,6 +360,7 @@ export default async function MatchesPage() {
         homeName={match.team1}
         awayName={match.team2}
         score={matchScore(match, competition.sport)}
+        competition={competition.id}
         sport={competition.sport}
         strictModeAvailable={strictModeAvailable(competition.sport, match.stage)}
         homeIsWinner={

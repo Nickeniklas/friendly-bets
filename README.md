@@ -1,8 +1,8 @@
 # friendly-bets
 
 A non-commercial sports prediction game for family & friends — built for the World
-Cup 2026, now running the **Liiga 2026–27 regular season** (Finnish ice hockey), with
-a header dropdown to switch competitions. See `CLAUDE.md`
+Cup 2026, now running the **NHL 2026–27** and **Liiga 2026–27** regular seasons (ice
+hockey), with a header dropdown to switch competitions. See `CLAUDE.md`
 and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and current status.
 `docs/HISTORY.md` has the detailed step-by-step build log.
 
@@ -18,6 +18,10 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
 > `supabase/migrations/20260918120000_competitions.sql` (applied). See "Competitions"
 > below.
 
+> **2026-10-16 — NHL 2026–27 added** as a second hockey competition, listed first in
+> the dropdown (the default for new visitors). It inherits every hockey rule through
+> `competitions.sport`. Migration `20261016120000_nhl_competition.sql` (one INSERT).
+
 > **2026-06-16 — model change: parimutuel pool → fixed-points scoring.** Players no
 > longer stake points. They predict each match's outcome (home win / draw / away win)
 > and score fixed points at settlement: correct +10, +5 underdog bonus if the picked
@@ -31,8 +35,8 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
   `supabase/migrations/`).
 - `/api/sync` (`src/app/api/sync/route.ts`) is deployed to Vercel, protected by a
   shared secret, and triggered every 5 minutes by cron-job.org (200 OK confirmed,
-  reduced from every 2-3h on 2026-06-14) — pulls Liiga fixtures/results from
-  liiga.fi (openfootball, the WC source, is no longer fetched), upserts `matches`,
+  reduced from every 2-3h on 2026-06-14) — pulls NHL fixtures/results from
+  api-web.nhle.com and Liiga's from liiga.fi, in parallel (openfootball, the WC source, is no longer fetched), upserts `matches`,
   and auto-settles via `settle_match`. The Vercel project is
   connected to this GitHub repo for auto-deploys on push to `main`.
 - Auth is built two ways: **magic link** (`/login` sends a sign-in email,
@@ -72,7 +76,7 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
   people signing in. See `CLAUDE.md` ("Email / SMTP") for setup details.
   Since the sending address has no domain reputation yet, `/login` shows a
   reminder to check spam/junk for the magic-link email.
-- Team flags (World Cup) and club logos (Liiga) are shown next to team names
+- Team flags (World Cup) and club logos (NHL, Liiga) are shown next to team names
   on `/matches` (see "Team flags and logos" below).
 - Daily login bonus — **disabled 2026-06-16** (it inflated the prediction
   score under the new fixed-points model). The DB RPC/columns remain dormant;
@@ -126,12 +130,14 @@ curl http://localhost:3000/api/sync -H "Authorization: Bearer <your-SYNC_SECRET>
 
 Expect `{"synced": <count>, "settled": [...]}` (plus `feedErrors` if a feed failed —
 that feed is skipped for the tick, the rest still runs). The `matches` table should
-populate with Liiga 2026–27 regular-season games (`competition = 'liiga-2027'`).
+populate with NHL and Liiga 2026–27 regular-season games (`competition = 'nhl-2027'` /
+`'liiga-2027'`).
 
 ### Competitions
 
 Every match belongs to a row in the `competitions` table (`wc2026` = World Cup 2026,
-football, finished; `liiga-2027` = Liiga 2026–27, hockey, active). The dropdown in the
+football, finished; `liiga-2027` = Liiga 2026–27, hockey, active; `nhl-2027` = NHL
+2026–27, hockey, active and first in the dropdown, so it is the default). The dropdown in the
 sticky header (`src/components/competition-select.tsx`) stores the choice in the
 `fb-competition` cookie and refreshes the page; `getSelectedCompetition()`
 (`src/lib/competitions.ts`) reads it on the server and falls back to the first active
@@ -147,12 +153,23 @@ can be upgraded to **"Win in 60′" (+5)**, which only wins if the team leads af
 regulation. A Past card's headline score is always the **60-minute score**, with the
 final score underneath as a note: "3–2 OT" after overtime, "5–4 SO" after a shootout
 (regulation + the shootout decider, the way liiga.fi counts it), nothing for a
-regulation finish. Football keeps its "a.e.t." / "pens" notes with the after-extra-time
+regulation finish.
+
+NHL data comes from the NHL's public web API (`src/lib/nhl.ts`,
+`api-web.nhle.com/v1/schedule/{date}`, unofficial, no key): four 7-day windows from
+14 days ago to 2 weeks ahead, fetched in parallel. The schedule has only the final
+score and how the game ended (REG/OT/SO), so the regulation score is reconstructed: an
+OT or SO game was tied at the loser's score after 60′ (an OT game ends on one goal; a
+shootout adds one goal to the winner). Games are grouped into Monday-start weeks in
+Finnish time, Week 1 = the week of 2026-09-29. Same grading and display as Liiga.
+
+Football keeps its "a.e.t." / "pens" notes with the after-extra-time
 headline, and its "Win in 90′" option only on World Cup knockout matches.
 
-To add a competition (e.g. NHL): insert a `competitions` row, write a parser in
+To add a competition: insert a `competitions` row, write a parser in
 `src/lib` that returns `MatchRow[]`, and add it to the `feeds` list in
-`src/app/api/sync/route.ts`. No page changes needed.
+`src/app/api/sync/route.ts`. No page changes needed (for logos, add the league's map
+to `src/lib/team-logos.ts`).
 
 ### Auth (magic link + Google)
 
@@ -211,7 +228,7 @@ tabs, each showing a match count:
   result yet). Soonest-started first.
 - **Past** — settled. Most recent result first.
 
-For an active competition (Liiga), Upcoming and Past only show the next / last 14
+For an active competition (NHL, Liiga), Upcoming and Past only show the next / last 14
 days — a regular season has ~540 games. The finished World Cup shows everything.
 
 Within each tab, matches are grouped under a sticky date header per kickoff
@@ -319,9 +336,11 @@ Three sections:
 ### Team flags and logos
 
 `/matches` shows a small mark next to each team name: a country flag for
-national teams, a club logo for Liiga teams, nothing otherwise. The `Flag`
+national teams, a club logo for NHL and Liiga teams, nothing otherwise. The `Flag`
 component (`src/components/flag.tsx`) checks the flag map first, then the logo
-map, and renders nothing for names in neither.
+map **for the current competition** (`teamLogo(competition, team)` in
+`src/lib/team-logos.ts`, so two leagues can't collide on a team name), and renders
+nothing for names in neither.
 
 **Flags.** `src/lib/flags.ts` maps the 48 real WC2026 country names (as they
 appear in openfootball's `team1`/`team2`) to
@@ -336,7 +355,7 @@ each team's logo, but as CMS asset URLs that can change, so the app doesn't
 hotlink them. `scripts/copy-team-logos.mjs` fetches the feed once, downloads
 every team's logo into `public/teams/` (`kalpa.webp`, plus `lukko-dark.png`
 where liiga.fi has a separate dark-background variant) and **regenerates**
-`src/lib/team-logos.ts` (`TEAM_LOGOS`, keyed by the exact `teamName` stored in
+`src/lib/team-logos-liiga.ts` (`LIIGA_TEAM_LOGOS`, keyed by the exact `teamName` stored in
 `matches.team1`/`team2`). Logos render square (`object-contain`). In dark mode
 each logo sits on a small near-white circle so black logos (e.g. TPS) stay
 visible. The exception is a team with its own dark-background variant (Lukko),
@@ -348,6 +367,18 @@ regenerated map:
 
 ```bash
 node scripts/copy-team-logos.mjs
+```
+
+NHL logos work the same way: `scripts/copy-nhl-logos.mjs` walks the schedule from the
+season start until it has seen all 32 teams, downloads each team's `logo` and
+`darkLogo` SVG from assets.nhle.com into `public/teams/nhl/` (`tor.svg`,
+`tor-dark.svg`, …) and regenerates `src/lib/team-logos-nhl.ts` (keyed by
+`commonName.default`, e.g. "Maple Leafs"). Every NHL team has a dark variant, so in
+dark mode it switches to that instead of using the light circle. SVGs skip Next's
+image optimizer (`unoptimized`). Re-run it after a relocation, expansion or rebrand:
+
+```bash
+node scripts/copy-nhl-logos.mjs
 ```
 
 ### Icons

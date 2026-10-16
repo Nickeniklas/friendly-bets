@@ -68,6 +68,7 @@ export function MatchCard({
   homeName,
   awayName,
   score,
+  competition,
   sport,
   strictModeAvailable,
   homeIsWinner,
@@ -88,6 +89,8 @@ export function MatchCard({
   // Final score for settled matches (undefined for upcoming/live or when the
   // sync job hasn't recorded goals yet).
   score?: MatchScore;
+  // competitions.id — scopes the team-logo lookup in <Flag>.
+  competition: string;
   // competitions.sport — picks the strict-mode copy (90′ vs 60′).
   sport: string;
   // WC knockouts and hockey games offer the strict "win in regulation" mode on
@@ -203,6 +206,7 @@ export function MatchCard({
         <OutcomeButton
           kind="team"
           teamName={homeName}
+          competition={competition}
           selected={canPick && selected === "team1"}
           isWinner={homeIsWinner}
           isUserPick={existingBet?.pick === "team1"}
@@ -220,6 +224,7 @@ export function MatchCard({
         <OutcomeButton
           kind="team"
           teamName={awayName}
+          competition={competition}
           selected={canPick && selected === "team2"}
           isWinner={awayIsWinner}
           isUserPick={existingBet?.pick === "team2"}
@@ -369,6 +374,7 @@ export function MatchCard({
 function OutcomeButton({
   kind,
   teamName,
+  competition,
   selected,
   isWinner,
   isUserPick,
@@ -377,6 +383,7 @@ function OutcomeButton({
 }: {
   kind: "team" | "draw";
   teamName?: string;
+  competition?: string;
   selected: boolean;
   isWinner: boolean;
   isUserPick: boolean;
@@ -412,7 +419,7 @@ function OutcomeButton({
       ].join(" ")}
     >
       {kind === "team" ? (
-        <Flag team={teamName ?? ""} width={28} className="mb-2" />
+        <Flag team={teamName ?? ""} competition={competition ?? ""} width={28} className="mb-2" />
       ) : (
         <div className="mb-2 text-[22px] leading-none">🤝</div>
       )}

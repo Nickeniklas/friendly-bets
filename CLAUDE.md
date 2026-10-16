@@ -7,9 +7,10 @@ brief current and short.
 
 ## Status (as of 2026-10-16)
 **v2 is complete and live** at `https://friendly-bets-rust.vercel.app`. All of
-`docs/PLAN.md`'s build order (steps 1-8) is DONE. **The active competition is now
-the Liiga 2026–27 regular season (ice hockey)**; the finished World Cup stays
-selectable — see the 2026-09-18 "Liiga" entry at the end of this list.
+`docs/PLAN.md`'s build order (steps 1-8) is DONE. **The active competitions are now
+the NHL 2026–27 (the default) and Liiga 2026–27 regular seasons (ice hockey)**; the
+finished World Cup stays selectable — see the 2026-09-18 "Liiga" and 2026-10-16 "NHL"
+entries at the end of this list.
 
 > **2026-06-16 — model change: parimutuel → accuracy/points.** The staking/pool model
 > was replaced with a fixed-points prediction model (see "Scoring rules" below): no
@@ -24,8 +25,9 @@ selectable — see the 2026-09-18 "Liiga" entry at the end of this list.
 
 - Supabase schema, RPC (`settle_match`), `accuracy` view, RLS, and GRANTs are applied.
 - `/api/sync` is deployed, protected by `SYNC_SECRET`, and triggered every 5 minutes by
-  cron-job.org (syncs fixtures/results and auto-settles finished matches — Liiga
-  since 2026-09-18; openfootball for the WC before that). cron-job.org times the
+  cron-job.org (syncs fixtures/results and auto-settles finished matches — NHL since
+  2026-10-16, Liiga since 2026-09-18, loaded in parallel; openfootball for the WC
+  before that). cron-job.org times the
   run out at 30 s, so every upstream feed fetch is capped at `UPSTREAM_TIMEOUT_MS`
   (8 s, `src/lib/openfootball.ts`); a timed-out feed is skipped, the rest of the
   run (other feeds + settlement) still happens, and the response is a 504
@@ -453,6 +455,24 @@ start on these without being asked.
   (dry-run SELECT is in its header); (4) trigger `/api/sync` (cron-job.org "Run now").
   Running the script before the deploy would let the old parser re-settle the same
   wrong way. See `docs/HISTORY.md`.
+- **NHL 2026–27 (2026-10-16)** — a second hockey competition, inheriting every hockey
+  feature through `sport` (no page or trigger change needed). Migration
+  `20261016120000_nhl_competition.sql` = one INSERT (`nhl-2027`, hockey, active,
+  `sort_order 0` → default + first in the dropdown). Parser `src/lib/nhl.ts`
+  (`api-web.nhle.com/v1/schedule/{date}`, 4 parallel 7-day windows today−14…+13,
+  `gameType = 2` only, `external_ref = nhl-{id}`, team1 = home, names =
+  `commonName.default`, "Week N" = Monday weeks in Helsinki time from 2026-09-28).
+  The feed has no periods, so regulation is reconstructed from `lastPeriodType`: OT/SO
+  → ft = loser–loser, `result_ft = draw`, result = winner, et = final (OT) or p = 1–0
+  (SO); a non-one-goal OT/SO margin is logged and left ungraded. `/api/sync` feeds
+  now load in parallel. Logos: `scripts/copy-nhl-logos.mjs` → `public/teams/nhl/*.svg`
+  (light + dark) + generated `src/lib/team-logos-nhl.ts`; the Liiga map moved to
+  `src/lib/team-logos-liiga.ts`, and `teamLogo(competition, team)` in
+  `src/lib/team-logos.ts` scopes lookups per competition (`Flag` now takes
+  `competition`). **Manual steps, in order:** (1) apply the migration; (2) deploy
+  (push to `main`); (3) trigger `/api/sync`. The migration must land first: an NHL
+  row with an unknown competition id fails the FK and with it the whole combined
+  upsert (Liiga included) for that tick. See `docs/HISTORY.md`.
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.
@@ -582,8 +602,8 @@ instead of following OS preference:
 
 ## What we're building
 A non-commercial sports prediction game for family & friends — built for the World
-Cup 2026, now running the Liiga 2026–27 regular season (competition selector in the
-header). No real money.
+Cup 2026, now running the NHL and Liiga 2026–27 regular seasons (competition selector
+in the header). No real money.
 Players predict each match's outcome — **home win / draw / away win** (no stake) — and
 earn or lose points at settlement based on whether they were right and how the crowd bet
 (an underdog bonus). Everyone starts at 0 points; balances may go negative. A separate
@@ -592,7 +612,8 @@ accuracy leaderboard tracks raw prediction skill.
 ## Stack (decided — do not re-litigate without being asked)
 - Next.js on Vercel
 - Supabase: Postgres + Auth (magic link) + realtime
-- Match data: liiga.fi public API for Liiga (active); openfootball
+- Match data: api-web.nhle.com (public, unofficial) for NHL and liiga.fi public API
+  for Liiga (both active); openfootball
   `worldcup.json` for the finished WC (no longer fetched). Synced every 5
   minutes via cron-job.org → `/api/sync`
 - No odds — a fixed-points scoring model (see scoring rules below)
@@ -665,9 +686,13 @@ step-by-step build log:
 8. Polish: crowd-split (% of picks per outcome) display on `/matches`
 
 ## Gotchas
-- Adding a competition (e.g. NHL): insert a `competitions` row, write a parser
+- Adding a competition: insert a `competitions` row, write a parser
   in `src/lib` returning `MatchRow[]` (with `competition` set — the column has no
-  default), and add it to the `feeds` list in `/api/sync`. Pages need no change;
+  default), and add it to the `feeds` list in `/api/sync`. Apply the row BEFORE
+  deploying the feed: one unknown competition id fails the FK and the whole
+  combined upsert (every feed) for that tick. Logos: generate a per-league map and
+  register it in `src/lib/team-logos.ts` (keyed by competition id, so names can't
+  collide across leagues). Pages need no change;
   anything sport-specific must key off `competitions.sport`, never the id. Any new
   query on `/matches`/`/leaderboard`/`/stats` must filter by the selected
   competition (bets/`match_bet_counts` via `matches!inner(competition)`).

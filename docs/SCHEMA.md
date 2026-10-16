@@ -24,11 +24,12 @@ belong to the daily login bonus, which is disabled as of 2026-06-16 — see belo
 ### `competitions` (2026-09-18)
 One row per league/tournament season. Read-all RLS + SELECT grant to
 `anon`/`authenticated`; only `service_role` writes. Migration
-`20260918120000_competitions.sql`.
+`20260918120000_competitions.sql` (+ the `nhl-2027` row, sort_order 0, in
+`20261016120000_nhl_competition.sql`).
 
 | column | type | notes |
 |---|---|---|
-| id | text (PK) | `wc2026`, `liiga-2027` |
+| id | text (PK) | `wc2026`, `liiga-2027`, `nhl-2027` |
 | name | text | display name, e.g. "Liiga 2026–27" |
 | sport | text | `football` / `hockey` — drives sport-specific display (OT/SO labels, icon) |
 | is_active | bool | currently running: default selection + /matches ±14-day window |
@@ -39,18 +40,18 @@ The UI's selected competition is a cookie (`fb-competition`), resolved by
 first active competition by `sort_order`).
 
 ### `matches`
-One row per game, synced by `/api/sync` (Liiga from liiga.fi; the WC rows came from
-openfootball and are frozen).
+One row per game, synced by `/api/sync` (NHL from api-web.nhle.com, Liiga from
+liiga.fi; the WC rows came from openfootball and are frozen).
 
 | column | type | notes |
 |---|---|---|
 | id | uuid (PK) | |
 | external_ref | text (unique) | stable key from the feed to dedupe on re-sync |
-| competition | text (FK→competitions, NOT NULL) | `wc2026` / `liiga-2027`; no default — the sync must set it |
+| competition | text (FK→competitions, NOT NULL) | `wc2026` / `liiga-2027` / `nhl-2027`; no default — the sync must set it |
 | team1 | text | home team |
 | team2 | text | away team |
 | kickoff_at | timestamptz | betting closes at this time |
-| group_label | text | e.g. "Group A" (WC), "Week 3" (Liiga) — the hockey leaderboard/stats period key, see `periodKey()` in `src/lib/stats.ts` |
+| group_label | text | e.g. "Group A" (WC), "Week 3" (Liiga, NHL) — the hockey leaderboard/stats period key, see `periodKey()` in `src/lib/stats.ts` |
 | stage | text | WC: group / r32 / r16 / qf / sf / third_place / final; leagues: `regular` |
 | status | text | `scheduled` → `closed` → `settled` |
 | result | text | `team1` / `team2` / `draw` / null until played |
@@ -72,6 +73,29 @@ A regulation finish makes them equal. On an OT/SO game `result_ft = 'draw'` and
 `finishedType` shows OT/SO, `p_*` only for a shootout. (Before 2026-10-16 the parser
 set `result = result_ft` = regulation, so OT/SO winners always lost; those games were
 re-graded with `supabase/scripts/resettle_liiga_ot.sql`.)
+
+**NHL** (`src/lib/nhl.ts`): `api-web.nhle.com/v1/schedule/{YYYY-MM-DD}` (public,
+unofficial, no key; 7 days per call). Each sync fetches four windows (today−14, −7, 0,
++7) in parallel, dedupes by game id, keeps only `gameType = 2` (regular season). No
+backfill of older games. `external_ref = nhl-{id}` (numeric, stable, single keying).
+`team1` = `homeTeam`, `team2` = `awayTeam` (the feed lists away first), names from
+`commonName.default` ("Maple Leafs"). `kickoff_at = startTimeUTC`, `stage = 'regular'`,
+`group_label = "Week N"` = Monday-start weeks in Europe/Helsinki time, Week 1 = the week
+of 2026-09-29 (`nhlWeekLabel()`). Same grading model as Liiga, set only when
+`gameState` is `OFF`/`FINAL`. The schedule has no periods, just the final score and
+`gameOutcome.lastPeriodType`, so regulation is reconstructed:
+
+| lastPeriodType | ft | et | p | result_ft | result |
+|---|---|---|---|---|---|
+| REG | final | — | — | outcome | = result_ft |
+| OT | loser–loser | final | — | `draw` | winner |
+| SO | loser–loser | — | 1–0 to winner | `draw` | winner |
+
+OT is sudden death (one goal), and the NHL's final score gives the shootout winner one
+extra goal, so in both cases regulation was tied at the loser's score. If an OT/SO
+final isn't a one-goal margin, the parser logs it and leaves the game ungraded (all
+result/score columns null) rather than guess. For SO, `ft + p` = the NHL final, which
+is what `/matches` shows as the "2–1 SO" note.
 
 `external_ref`: openfootball doesn't ship a clean id, so build one deterministically
 and upsert on it so re-syncs update rows instead of duplicating them.
