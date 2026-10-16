@@ -6,10 +6,15 @@
  * Mirrors src/lib/openfootball.ts: this file only translates Liiga's JSON shape
  * into `matches` rows; it doesn't talk to Supabase.
  *
- * Grading is the standard hockey 1X2 on the 60-MINUTE (regulation) result: a
- * game tied after three periods is a 'draw' even if someone wins it in
- * overtime or the shootout. So result = result_ft = the regulation outcome and
- * settle_match needs no hockey-specific logic.
+ * Grading reuses the World Cup knockout model (settle_match is unchanged):
+ *   * result    = the FINAL winner, after overtime / the shootout (summed over
+ *                 every period, incl. the shootout decider);
+ *   * result_ft = the 60-minute (regulation) result — 'draw' if tied after
+ *                 three periods.
+ * A regulation finish makes them equal. On an OT/SO game (2–2 after 60, home
+ * wins in OT): a standard 'team1' pick wins (matches result), a 'draw' pick
+ * wins (matches result_ft), 'team2' loses — and a "Win in 60′" (ft_winner)
+ * 'team1' pick LOSES, since it's graded strictly on result_ft.
  */
 import { UPSTREAM_TIMEOUT_MS, type MatchRow } from "@/lib/openfootball";
 
@@ -101,7 +106,7 @@ export function toLiigaMatchRow(game: LiigaGame): MatchRow {
   // Only a finished game gets a result/score. (settle_match additionally waits
   // until 3h after kickoff — see SETTLE_DELAY_HOURS in /api/sync.)
   const regulation = game.ended ? sumPeriods(game, "NORMAL") : null;
-  const result = regulation ? compareGoals(regulation) : null;
+  const resultFt = regulation ? compareGoals(regulation) : null;
 
   // Display-only scores (never graded): ft = regulation, et = after overtime,
   // p = the shootout period (the decider, e.g. 1–0).
@@ -113,6 +118,17 @@ export function toLiigaMatchRow(game: LiigaGame): MatchRow {
       : null;
   const shootoutScore = regulation && wentToShootout ? shootout : null;
 
+  // The final winner. liiga.fi zero-fills unplayed periods and counts a
+  // shootout as a single +1 "period", so regulation + OT + shootout always
+  // equals the final score (homeTeam.goals / awayTeam.goals — checked against
+  // the whole 2026–27 feed on 2026-10-16) and is never a tie for an OT/SO game.
+  const result = regulation
+    ? compareGoals([
+        regulation[0] + overtime[0] + shootout[0],
+        regulation[1] + overtime[1] + shootout[1],
+      ])
+    : null;
+
   return {
     external_ref: `liiga-${game.id}`,
     competition: LIIGA_COMPETITION_ID,
@@ -122,7 +138,7 @@ export function toLiigaMatchRow(game: LiigaGame): MatchRow {
     group_label: game.gameWeek ? `Week ${game.gameWeek}` : null,
     stage: "regular",
     result,
-    result_ft: result,
+    result_ft: resultFt,
     ft_team1: regulation?.[0] ?? null,
     ft_team2: regulation?.[1] ?? null,
     et_team1: afterOvertime?.[0] ?? null,

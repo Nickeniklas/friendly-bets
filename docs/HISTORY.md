@@ -1538,3 +1538,62 @@ cron-job.org flags the run. Other feed errors keep their old handling (logged, l
 `feedErrors`, 200). Settlement, `settle_match` and the auth check are unchanged.
 Verified with `npx tsc --noEmit` and `npm run lint` (both clean); the timeout path was not
 exercised against a real hanging upstream.
+
+## Post-v1 — hockey OT/SO grading + "Win in 60′" (2026-10-16)
+
+**The bug.** Since launch the Liiga parser set `result = result_ft` = the regulation
+(60-min) outcome, so on a game tied after 60 and won in overtime or the shootout only a
+`draw` pick won — a pick on the team that actually won was always wrong. The fix reuses
+the World Cup knockout model (2026-06-30) with **no `settle_match` change**:
+`src/lib/liiga.ts` now sets `result` = the final winner (sum of every period, incl. the
+shootout's +1 decider; equals `homeTeam.goals`/`awayTeam.goals` for all 104 finished
+games) and `result_ft` = the regulation result. On a 2–2 → home-wins-in-OT game a
+standard `team1` pick and a `draw` pick both win, `team2` loses, and a strict `team1`
+pick loses.
+
+**"Win in 60′".** With a real way to win after regulation, the strict `ft_winner` mode
+now makes sense for hockey. Migration `20261016000000_hockey_ft_winner.sql` rewrites
+`check_bet_bettable()` to join `competitions` and allow `ft_winner` when
+`sport = 'hockey'` (the WC knockout allow-list is kept; the team-picks-only CHECK is
+untouched). `src/lib/competitions.ts` gained `strictModeAvailable(sport, stage)` as
+the app-side mirror. `match-card.tsx`'s `isKnockout` prop became `strictModeAvailable`
++ `sport`, with per-sport copy in `STRICT_MODE_COPY` (hockey: "To win" / "Win in 60′
+· +5", rows "(in 60′)"). `placeBet`'s friendly error now says "Win in 90′".
+
+**Display.** The winner flags on `/matches` already used `result OR result_ft` with no
+sport check, so the draw and the OT/SO winner both show "Winner ✓" automatically. The
+hockey status label on an OT/SO game is now "Draw after 60′ · <winner> won in OT/SO"
+(`statusInfo()`, SO when `p_*` is set). The hockey intro-card step was rewritten for
+the new rule and the 60′ option, and its localStorage key bumped to
+`fb-intro-dismissed-hockey-v2` so everyone sees it once.
+
+**Stats.** `isUnderdogHit()` is unchanged and correct (the ft_winner baseline of 15
+applies to hockey). Crowd facts key off `result`, so for hockey an OT/SO game now counts
+as a win for its winner rather than a draw: crowd accuracy, biggest upset and the
+draw-shyness "actual draw %" shift accordingly. Left as-is, matching the existing WC
+note.
+
+**Re-settle.** `supabase/scripts/resettle_liiga_ot.sql` (one-off, transactional,
+idempotent) un-settles settled `liiga-2027` games with `et_team1 IS NOT NULL`: reverses
+balances (summed per player first — see below), resets the bets'
+`outcome`/`points_awarded`, and sets the match to `closed` with
+`settled_at`/`result`/`result_ft` NULL. Clearing `result` stops a failed or timed-out
+feed tick from re-settling on the stale `draw`. Regulation games are untouched. Dry run
+against production: 21 games (= the feed's 15 OT + 6 SO), 36 bets, 4 players, net
+−120 points to reverse, 0 `ft_winner` bets. Rollout order: migration → deploy →
+script → `/api/sync`.
+
+**Side finding.** Postgres `UPDATE … FROM` applies only one source row per target row.
+`resettle_knockout_matches.sql` (2026-06-30) reversed balances that way, so a player
+with several settled knockout bets had only one reversed. `profiles.points_balance` may
+therefore be off for them; no page displays it since 2026-09-18, so this was noted (CLAUDE.md
+Gotchas), not fixed.
+
+### Verification
+`npx tsc --noEmit` and `npx eslint src` clean. The new parser was run against the live
+feed (transpiled with `typescript`, run under node): REG `liiga-2701274` Jukurit–HPK
+1–4 → `team2`/`team2`; OT `liiga-2701300` SaiPa–K-Espoo 1–1 → 2–1 OT → `team1`/`draw`,
+et 2–1; SO `liiga-2701280` Sport–Jokerit 4–4 → 5–4 SO → `team1`/`draw`, p 1–0. Across all
+104 finished games: `result` matches the final goals, regulation games have
+`result = result_ft`, and every OT/SO game has `result_ft = draw` + a winner. The UI was
+**not** checked in a browser, and the migration/script have not been applied.

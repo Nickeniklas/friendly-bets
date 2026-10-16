@@ -12,8 +12,9 @@ and `docs/PLAN.md` / `docs/SCHEMA.md` for the full spec, build order, and curren
 
 > **2026-09-18 — Liiga + multiple competitions.** The active competition is now the
 > Liiga 2026–27 regular season; the finished World Cup stays selectable from a
-> dropdown in the header. Same game (home/draw/away, +10 / +5 underdog / −5), with
-> hockey graded on the 60-minute result. DB changes are in
+> dropdown in the header. Same game (home/draw/away, +10 / +5 underdog / −5). Hockey
+> pays both the OT/SO winner and a Draw pick on a game tied after 60′, plus a strict
+> "Win in 60′" (+5) team pick (2026-10-16). DB changes are in
 > `supabase/migrations/20260918120000_competitions.sql` (applied). See "Competitions"
 > below.
 
@@ -138,13 +139,16 @@ competition. `/matches`, `/leaderboard` and `/stats` show only the selected
 competition — points and standings are summed from that competition's bets.
 
 Liiga data comes from liiga.fi's public site API (`src/lib/liiga.ts`, one request per
-sync). Hockey is graded on the **60-minute result**: a game tied after regulation is a
-**Draw**, whoever wins in overtime or the shootout. So a Past card's headline score is
-always the **60-minute score** (a 2–2 headline means Draw won), with the final score
-underneath as a note: "3–2 OT" after overtime, "5–4 SO" after a shootout (regulation +
-the shootout decider, the way liiga.fi counts it), nothing for a regulation finish.
-Football keeps its "a.e.t." / "pens" notes with the after-extra-time headline. The
-"Win in 90′" option only exists on World Cup knockout matches.
+sync). Hockey reuses the World Cup knockout grading: `result` is the **final** winner
+(after overtime / the shootout) and `result_ft` the **60-minute** result. A team pick
+wins if that team wins at all; a Draw pick wins if the game was tied after 60′ — so an
+OT/SO game pays both (the card says e.g. "Draw after 60′ · TPS won in OT"). Team picks
+can be upgraded to **"Win in 60′" (+5)**, which only wins if the team leads after
+regulation. A Past card's headline score is always the **60-minute score**, with the
+final score underneath as a note: "3–2 OT" after overtime, "5–4 SO" after a shootout
+(regulation + the shootout decider, the way liiga.fi counts it), nothing for a
+regulation finish. Football keeps its "a.e.t." / "pens" notes with the after-extra-time
+headline, and its "Win in 90′" option only on World Cup knockout matches.
 
 To add a competition (e.g. NHL): insert a `competitions` row, write a parser in
 `src/lib` that returns `MatchRow[]`, and add it to the `feeds` list in

@@ -54,14 +54,24 @@ openfootball and are frozen).
 | stage | text | WC: group / r32 / r16 / qf / sf / third_place / final; leagues: `regular` |
 | status | text | `scheduled` → `closed` → `settled` |
 | result | text | `team1` / `team2` / `draw` / null until played |
-| result_ft | text | full-time result (WC: 90-min; hockey: 60-min = same as `result`) |
+| result_ft | text | full-time result (WC: 90-min; hockey: 60-min / regulation — `draw` on an OT/SO game, where `result` is the final winner) |
 | ft_/et_/p_team1, ft_/et_/p_team2 | int | display-only scores (never graded): WC 90′/after ET/pens; hockey regulation/after OT/shootout period |
 | settled_at | timestamptz | null until settled |
 
 **Liiga** (`src/lib/liiga.ts`): `external_ref = liiga-{id}` (the API's numeric game
-id — stable, single keying, so no orphan risk). Graded on the regulation (60-min)
-score = sum of `NORMAL` periods; `result = result_ft` = that outcome, set only when
-`ended`. `et_*` is set only if `finishedType` shows OT/SO, `p_*` only for a shootout.
+id — stable, single keying, so no orphan risk). Graded with the WC knockout model
+(since 2026-10-16; `settle_match` unchanged), both set only when `ended`:
+- `result_ft` = the regulation (60-min) result = sum of the `NORMAL` periods.
+- `result` = the **final** winner = sum of ALL periods (NORMAL + OVERTIME +
+  WINNING_SHOT_COMPETITION, the shootout counted as a +1 decider), which equals the
+  API's `homeTeam.goals`/`awayTeam.goals`.
+
+A regulation finish makes them equal. On an OT/SO game `result_ft = 'draw'` and
+`result` = the winner, so a standard pick on the winner AND a `draw` pick both win; a
+"Win in 60′" (`ft_winner`) pick on the winner loses. `et_*` is set only if
+`finishedType` shows OT/SO, `p_*` only for a shootout. (Before 2026-10-16 the parser
+set `result = result_ft` = regulation, so OT/SO winners always lost; those games were
+re-graded with `supabase/scripts/resettle_liiga_ot.sql`.)
 
 `external_ref`: openfootball doesn't ship a clean id, so build one deterministically
 and upsert on it so re-syncs update rows instead of duplicating them.
@@ -186,8 +196,10 @@ anymore.
 - `bets`: a user inserts only their own (and only on a bettable match); reads all
   (so the crowd split is visible). The `enforce_bet_window` trigger
   (`check_bet_bettable()`) also rejects `ft_winner = true` unless the match's stage is
-  a WC knockout stage (r32/r16/qf/sf/third_place/final) — an allow-list since
-  2026-09-18, so Liiga's `regular` stage is rejected too.
+  a WC knockout stage (r32/r16/qf/sf/third_place/final) **or** its competition's
+  `sport = 'hockey'` ("Win in 60′", since 2026-10-16,
+  `20261016000000_hockey_ft_winner.sql`). Mirrored by `strictModeAvailable()` in
+  `src/lib/competitions.ts`.
 - `competitions`: read for all; writes only by service role.
 - `matches`: read for all; writes only by the sync job / admin (service role).
 - Settlement runs as a `security definer` RPC so normal users can't touch balances.

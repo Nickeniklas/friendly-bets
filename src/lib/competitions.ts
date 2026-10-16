@@ -29,14 +29,25 @@ export function sportIcon(sport: string): string {
 
 /**
  * WC knockout stage codes (from mapStage() in src/lib/openfootball.ts) — the
- * only stages where the "wins in 90′" pick mode exists. Mirrored by the
- * allow-list in the enforce_bet_window trigger
- * (supabase/migrations/20260918120000_competitions.sql) — keep them in sync.
+ * football stages where the "wins in 90′" pick mode exists.
  */
 export const KNOCKOUT_STAGES = ["r32", "r16", "qf", "sf", "third_place", "final"];
 
 export function isKnockoutStage(stage: string): boolean {
   return KNOCKOUT_STAGES.includes(stage);
+}
+
+/**
+ * Whether a match offers the strict "win in regulation" pick mode
+ * (bets.ft_winner, +5): "Win in 90′" on a WC knockout, "Win in 60′" on any
+ * hockey game. Both can be won after regulation (extra time / penalties,
+ * overtime / shootout), so the strict call is a real risk; anywhere else the
+ * bonus would be free. Mirrored by the ft_winner check in the
+ * enforce_bet_window trigger
+ * (supabase/migrations/20261016000000_hockey_ft_winner.sql) — keep them in sync.
+ */
+export function strictModeAvailable(sport: string, stage: string): boolean {
+  return sport === "hockey" || isKnockoutStage(stage);
 }
 
 /**

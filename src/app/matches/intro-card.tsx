@@ -4,9 +4,13 @@ import { useSyncExternalStore } from "react";
 
 // Football keeps the original key (so the World Cup card stays dismissed for
 // anyone who already closed it); other sports get their own key, so returning
-// players still see the sport-specific rules once.
+// players still see the sport-specific rules once. Hockey is on "-v2" since the
+// OT/SO grading change + "Win in 60′" mode (2026-10-16), so everyone who
+// dismissed the old rules sees the new ones once.
 function storageKey(sport: string): string {
-  return sport === "football" ? "fb-intro-dismissed" : `fb-intro-dismissed-${sport}`;
+  if (sport === "football") return "fb-intro-dismissed";
+  if (sport === "hockey") return "fb-intro-dismissed-hockey-v2";
+  return `fb-intro-dismissed-${sport}`;
 }
 
 const listeners = new Set<() => void>();
@@ -34,11 +38,11 @@ const STEPS = [
   "Wrong picks lose 5 points — climb the leaderboard with your prediction skill!",
 ];
 
-// Extra rule shown for hockey competitions: picks are graded on the 60-minute
-// (regulation) result, so a game tied after three periods is a draw even if it
-// was then won in overtime or the shootout.
+// Extra rule shown for hockey competitions: a team pick wins if the team wins at
+// all (60′, OT or shootout), a Draw pick wins if it was tied after 60′ — so an
+// OT/SO game pays both. "Win in 60′" is the strict +5 team pick.
 const HOCKEY_STEP =
-  "Hockey is graded on the 60-minute result — a game tied after regulation counts as a Draw, whoever wins in OT or the shootout";
+  "Hockey: a team pick wins if they win in 60′, OT or the shootout; Draw wins if it's tied after 60′ — so an OT game pays both. Pick “Win in 60′” for +5 if you think they'll win in regulation";
 
 /** "How to play" card, dismissed permanently via localStorage. */
 export function IntroCard({ sport }: { sport: string }) {

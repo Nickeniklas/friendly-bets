@@ -41,10 +41,11 @@ exactly why the scoring design needs no oddsmaking).
   ago, not yet settled. `settle_match` is atomic, idempotent, and the ONLY path that
   changes a balance.
 - A separate accuracy view tracks bets placed / correct / wrong / win rate % / streak.
-- **Hockey (Liiga)** is graded on the **60-minute (regulation) result** — standard
-  hockey 1X2. A game tied after three periods is a `draw` even if won in OT/shootout
-  (the parser sets `result = result_ft` = regulation outcome, so `settle_match` is
-  unchanged). No "wins in 90′" mode for hockey.
+- **Hockey (Liiga)** uses the WC knockout model (since 2026-10-16): `result` = the
+  final winner (after OT/shootout), `result_ft` = the 60-minute result. A team pick
+  wins if that team wins at all; a `draw` pick wins if it was tied after 60 — so an
+  OT/SO game pays both. **"Win in 60′" (+5)** is the strict team pick (graded on
+  `result_ft`, loses if the team only won in OT/SO). `settle_match` is unchanged.
 
 ## Competitions
 - `competitions` table (`id`, `name`, `sport`, `is_active`, `sort_order`); every
@@ -102,16 +103,18 @@ exactly why the scoring design needs no oddsmaking).
 - No test suite — verify with `npx tsc --noEmit` + eslint.
 
 ## Open items
-- None known. Liiga support shipped 2026-09-18, and the leaderboard pills / stats
-  breakdowns became per-sport "periods" (football round, hockey game week) on
-  2026-09-20 (see CLAUDE.md Status).
+- Hockey OT/SO grading + "Win in 60′" (2026-10-16): code done; the manual rollout
+  (migration → deploy → `supabase/scripts/resettle_liiga_ot.sql` → `/api/sync`) is in
+  CLAUDE.md Status.
 
 ## v3 ideas (backlog — don't start without being asked)
 - Liiga playoffs (series format — not yet looked at), NHL.
 - Live in-match scores/stats (needs a different data source than openfootball).
 - Knockout-bracket-specific logic (predict who advances, bracket-wide scoring).
-- Crowd facts in `/stats` still key off `result` (advancer) not `result_ft` — known
-  minor inconsistency, deliberately left.
+- Crowd facts in `/stats` still key off `result` (advancer / hockey final winner) not
+  `result_ft` — known minor inconsistency, deliberately left. For hockey this means an
+  OT/SO game counts as a win for its winner, not a draw, in "crowd accuracy", "biggest
+  upset" and the draw-shyness comparison.
 - Guard against orphaned match rows from `buildExternalRef`'s dual keying. If
   openfootball adds a `num` to a match that previously had none, the external_ref
   changes and the next sync inserts a new row while the old one is orphaned — never

@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { getSelectedCompetition, isKnockoutStage } from "@/lib/competitions";
+import { getSelectedCompetition, strictModeAvailable } from "@/lib/competitions";
 import { AppHeader } from "@/components/app-header";
 import { BottomNav } from "@/components/bottom-nav";
 import { IntroCard } from "./intro-card";
@@ -104,13 +104,19 @@ function statusInfo(
   sport: string,
 ): { label: string; color: "muted" | "gold" } {
   if (match.status === "settled" && sport === "hockey") {
-    // Hockey is graded on the 60-minute result (result = result_ft), so a game
-    // tied after regulation is a "Draw" even if it was won in OT/shootout —
-    // say so. This matches matchScore(), whose headline is the regulation
-    // score (a tie there = this label) and whose note shows the OT/SO final.
-    // A "won" label here therefore always means won in regulation.
-    if (match.result === "team1") return { label: `${match.team1} won`, color: "muted" };
-    if (match.result === "team2") return { label: `${match.team2} won`, color: "muted" };
+    // Hockey: result = the final winner (after OT/shootout), result_ft = the
+    // 60-minute result. A game tied after regulation was won by BOTH 'draw'
+    // picks and standard picks on the final winner, so name both, e.g.
+    // "Draw after 60′ · TPS won in OT". matchScore()'s headline is the
+    // regulation score (the tie) and its note the OT/SO final.
+    const winner =
+      match.result === "team1" ? match.team1 : match.result === "team2" ? match.team2 : null;
+    if (match.result_ft === "draw" && winner) {
+      // The Liiga parser only sets p_* for a game decided in the shootout.
+      const how = match.p_team1 != null ? "SO" : "OT";
+      return { label: `Draw after 60′ · ${winner} won in ${how}`, color: "gold" };
+    }
+    if (winner) return { label: `${winner} won`, color: "muted" };
     return { label: "Draw after 60′", color: "gold" };
   }
   if (match.status === "settled") {
@@ -141,7 +147,8 @@ function matchScore(match: Match, sport: string): MatchScore | undefined {
   if (match.status !== "settled") return undefined;
 
   // Hockey: the headline is ALWAYS the 60-minute (regulation) score, because
-  // that's what picks are graded on — a 2–2 headline means Draw won. The note
+  // that's what 'draw' and "Win in 60′" picks are graded on — a 2–2 headline
+  // means Draw won (as did standard picks on the OT/SO winner). The note
   // carries the final score and how it was decided. The Liiga parser sets et_*
   // for any game that went past regulation (OT or shootout) and p_* only for a
   // shootout, where p_* is the shootout "period" decider (e.g. 1–0) — liiga.fi
@@ -337,9 +344,10 @@ export default async function MatchesPage() {
         }
       : undefined;
 
-    // A pick wins on either the overall result or the full-time (90-min)
-    // result, so on a knockout decided in extra time BOTH the advancer and
-    // 'draw' are flagged as winners (Option B).
+    // A pick wins on either the overall result or the full-time (90-min /
+    // 60-min) result, so on a knockout decided in extra time — or a hockey game
+    // decided in OT/shootout — BOTH the final winner and 'draw' are flagged as
+    // winners (Option B). Nothing here is sport-specific.
     return (
       <MatchCard
         key={match.id}
@@ -351,7 +359,8 @@ export default async function MatchesPage() {
         homeName={match.team1}
         awayName={match.team2}
         score={matchScore(match, competition.sport)}
-        isKnockout={isKnockoutStage(match.stage)}
+        sport={competition.sport}
+        strictModeAvailable={strictModeAvailable(competition.sport, match.stage)}
         homeIsWinner={
           match.status === "settled" &&
           (match.result === "team1" || match.result_ft === "team1")

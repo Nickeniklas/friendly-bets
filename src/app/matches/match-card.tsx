@@ -15,10 +15,31 @@ export type ExistingBet = {
   pick: Pick;
   outcome: "won" | "lost" | "refunded" | null;
   pointsAwarded: number;
-  // "Wins in 90 min" mode — a knockout-only, team-pick-only prediction that the
-  // team is ahead at full time (graded strictly, worth +5). See settle_match in
-  // 20260701000000_ft_winner_pick.sql.
+  // Strict "win in regulation" mode — a team-pick-only prediction that the team
+  // is ahead after 90′ (WC knockouts) / 60′ (hockey), graded strictly on
+  // result_ft, worth +5. See settle_match in 20260701000000_ft_winner_pick.sql.
   ftWinner: boolean;
+};
+
+// Copy for the strict-mode toggle, per sport. Football = a WC knockout, where
+// the standard pick means "advances" (via 90′, extra time or penalties); hockey
+// = any game, where the standard pick means "wins" (in 60′, OT or shootout).
+// The strict option needs the team ahead when regulation ends.
+const STRICT_MODE_COPY = {
+  football: {
+    standardTitle: "To advance",
+    standardSubtitle: "Wins via 90′ or extra time",
+    strictTitle: "Win in 90′ · +5",
+    strictSubtitle: "Only if ahead at full time",
+    minutes: "90′",
+  },
+  hockey: {
+    standardTitle: "To win",
+    standardSubtitle: "Wins in 60′, OT or shootout",
+    strictTitle: "Win in 60′ · +5",
+    strictSubtitle: "Only if ahead after regulation",
+    minutes: "60′",
+  },
 };
 
 // Share (0–1) of all bets on this match that went to each outcome — used to
@@ -47,7 +68,8 @@ export function MatchCard({
   homeName,
   awayName,
   score,
-  isKnockout,
+  sport,
+  strictModeAvailable,
   homeIsWinner,
   drawIsWinner,
   awayIsWinner,
@@ -66,9 +88,11 @@ export function MatchCard({
   // Final score for settled matches (undefined for upcoming/live or when the
   // sync job hasn't recorded goals yet).
   score?: MatchScore;
-  // Knockout matches (anything but the group stage) offer the "wins in 90 min"
-  // mode on team picks; group matches don't (they have no extra time).
-  isKnockout: boolean;
+  // competitions.sport — picks the strict-mode copy (90′ vs 60′).
+  sport: string;
+  // WC knockouts and hockey games offer the strict "win in regulation" mode on
+  // team picks (see strictModeAvailable() in src/lib/competitions.ts).
+  strictModeAvailable: boolean;
   homeIsWinner: boolean;
   drawIsWinner: boolean;
   awayIsWinner: boolean;
@@ -78,8 +102,8 @@ export function MatchCard({
   existingBet?: ExistingBet;
 }) {
   const [selected, setSelected] = useState<Pick | null>(null);
-  // Whether the "wins in 90 min" toggle is on. Only meaningful for a knockout
-  // team pick; reset whenever the selection changes (see toggleSelect).
+  // Whether the strict "win in regulation" toggle is on. Only meaningful for an
+  // eligible team pick; reset whenever the selection changes (see toggleSelect).
   const [ftMode, setFtMode] = useState(false);
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -91,8 +115,10 @@ export function MatchCard({
   // the result shows as a toast and the page stays put — refreshing just
   // re-fetches this match's distribution/existingBet without navigating, so the
   // user's scroll position is untouched.
-  // "Wins in 90 min" is offered only on a knockout team pick (not draw).
-  const ftEligible = isKnockout && (selected === "team1" || selected === "team2");
+  // The strict mode is offered only on a team pick (not draw), and only where
+  // the match allows it.
+  const ftEligible = strictModeAvailable && (selected === "team1" || selected === "team2");
+  const strictCopy = sport === "hockey" ? STRICT_MODE_COPY.hockey : STRICT_MODE_COPY.football;
 
   async function handlePlaceBet() {
     if (selected === null || pending) return;
@@ -131,9 +157,10 @@ export function MatchCard({
   const pickLabel = (pick: Pick) =>
     pick === "team1" ? homeName : pick === "team2" ? awayName : "Draw";
 
-  // Label for an already-placed bet, marking the "wins in 90′" mode.
+  // Label for an already-placed bet, marking the strict mode ("(in 90′)" /
+  // "(in 60′)").
   const describeBet = (bet: ExistingBet) =>
-    `${pickLabel(bet.pick)}${bet.ftWinner ? " (in 90′)" : ""}`;
+    `${pickLabel(bet.pick)}${bet.ftWinner ? ` (in ${strictCopy.minutes})` : ""}`;
 
   // An outcome qualifies for the underdog bonus while it holds fewer than 33%
   // of the bets placed so far. Shown as a hint so players understand the bonus.
@@ -236,23 +263,24 @@ export function MatchCard({
         >
           <div className="mb-1 text-[13px] font-semibold">
             Predict: {pickLabel(selected)}
-            {ftEligible && ftMode ? " to win in 90′" : ""}
+            {ftEligible && ftMode ? ` to win in ${strictCopy.minutes}` : ""}
           </div>
 
-          {/* Knockout team pick: choose "to advance" (standard) or "win in 90′"
-              (strict, +5). Draw and group matches skip this. */}
+          {/* Eligible team pick: choose the standard pick ("To advance" /
+              "To win") or the strict one ("Win in 90′" / "Win in 60′", +5).
+              Draw and WC group matches skip this. */}
           {ftEligible && (
             <div className="mb-3 flex gap-2">
               <ModeButton
                 active={!ftMode}
-                title="To advance"
-                subtitle="Wins via 90′ or extra time"
+                title={strictCopy.standardTitle}
+                subtitle={strictCopy.standardSubtitle}
                 onClick={() => setFtMode(false)}
               />
               <ModeButton
                 active={ftMode}
-                title="Win in 90′ · +5"
-                subtitle="Only if ahead at full time"
+                title={strictCopy.strictTitle}
+                subtitle={strictCopy.strictSubtitle}
                 onClick={() => setFtMode(true)}
               />
             </div>
@@ -332,7 +360,8 @@ export function MatchCard({
  * unambiguous (the reason for the flagged→isWinner/isUserPick split):
  *   - `selected` — the live pre-pick highlight while betting (green fill/border).
  *   - `isWinner` — a settled winning outcome (green fill + "Winner ✓"). On a
- *     knockout decided in ET/pens BOTH the advancer and 'draw' are winners.
+ *     knockout decided in ET/pens, or a hockey game decided in OT/SO, BOTH
+ *     the final winner and 'draw' are winners.
  *   - `isUserPick` — the visitor's own pick, marked with a neutral "Your pick"
  *     chip + a subtle ring but NO green. A losing pick therefore never looks
  *     green; a pick that also won shows the green winner styling AND the chip.
@@ -404,7 +433,7 @@ function OutcomeButton({
   );
 }
 
-/** One of the two knockout bet-mode options ("To advance" / "Win in 90′"). */
+/** One of the two bet-mode options (standard / strict "Win in 90′ or 60′"). */
 function ModeButton({
   active,
   title,

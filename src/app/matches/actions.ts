@@ -27,10 +27,11 @@ const VALID_PICKS = ["team1", "draw", "team2"] as const;
 export async function placeBet(formData: FormData): Promise<PlaceBetResult> {
   const matchId = formData.get("matchId") as string;
   const pick = formData.get("pick") as string;
-  // "Wins in 90 min" mode — knockout team picks only (see the ft_winner column /
-  // settle_match in 20260701000000_ft_winner_pick.sql). The DB also enforces
-  // both rules (a CHECK + the bet-window trigger), so this is just a friendly
-  // early guard.
+  // Strict "win in regulation" mode ("Win in 90′" on WC knockouts, "Win in 60′"
+  // on hockey) — team picks only (see the ft_winner column / settle_match in
+  // 20260701000000_ft_winner_pick.sql). The DB also enforces both rules (a
+  // CHECK + the bet-window trigger, 20261016000000_hockey_ft_winner.sql), so
+  // this is just a friendly early guard.
   const ftWinner = formData.get("ftWinner") === "true";
 
   const supabase = await createClient();
@@ -76,7 +77,7 @@ function friendlyBetError(message: string): string {
     return "You've already predicted this match.";
   }
   if (message.includes("ft_winner picks are not allowed")) {
-    return "“Wins in 90” is only available on knockout matches.";
+    return "“Win in 90′” is only available on knockout matches.";
   }
   return message;
 }

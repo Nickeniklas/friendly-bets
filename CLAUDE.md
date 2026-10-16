@@ -5,7 +5,7 @@ For a step-by-step account of how v1 was built (including bugs found and fixed a
 way), see `docs/HISTORY.md` — that detail has been moved out of this file to keep this
 brief current and short.
 
-## Status (as of 2026-09-20)
+## Status (as of 2026-10-16)
 **v2 is complete and live** at `https://friendly-bets-rust.vercel.app`. All of
 `docs/PLAN.md`'s build order (steps 1-8) is DONE. **The active competition is now
 the Liiga 2026–27 regular season (ice hockey)**; the finished World Cup stays
@@ -387,7 +387,9 @@ start on these without being asked.
   code kept), and a failing feed is logged + skipped without failing the run. For an
   active competition `/matches` shows ±14 days only. Hockey display keys off
   `sport`: OT/SO score notes, "Draw after 60′", 🏒 icon, extra intro-card rule, no
-  "Win in 90′" (now `isKnockoutStage()`, not `stage !== 'group'`). Committed in
+  "Win in 90′" (now `isKnockoutStage()`, not `stage !== 'group'`). **Grading
+  superseded 2026-10-16:** OT/SO winners now win too, plus a "Win in 60′" mode (see
+  the entry at the end of this list). Committed in
   `78dbca4`; migration applied, `/api/sync` run, and confirmed working live by the
   owner (2026-09-18). See `docs/HISTORY.md`.
 - **Liiga display tweaks (2026-09-18, after the launch)**: (1) the hockey score
@@ -421,6 +423,36 @@ start on these without being asked.
   UI copy follows `periodNoun(sport)` ("Accuracy by week", "Biggest single-week
   haul"), and the leaderboard's empty state now says "in this period". See
   `docs/HISTORY.md`.
+- **Hockey OT/SO grading + "Win in 60′" (2026-10-16)** — under the old parser
+  (`result = result_ft` = regulation) a pick on the team that won in OT/SO always
+  lost. Liiga now reuses the WC knockout model, **`settle_match` unchanged**:
+  `src/lib/liiga.ts` sets `result` = the **final** winner (sum of all periods incl.
+  the shootout decider = the API's `goals`) and `result_ft` = the regulation result.
+  So on 2–2 after 60, home wins in OT: standard `team1` wins, `draw` wins, `team2`
+  loses, ft_winner `team1` loses. New migration `20261016000000_hockey_ft_winner.sql`
+  lets `enforce_bet_window` accept `ft_winner` when the match's competition is
+  `sport = 'hockey'` (joins `competitions`; team-picks-only CHECK untouched),
+  mirrored by `strictModeAvailable(sport, stage)` in `src/lib/competitions.ts`.
+  `match-card.tsx`'s `isKnockout` prop became `strictModeAvailable` + `sport`; copy
+  per sport via `STRICT_MODE_COPY` (football "To advance" / "Win in 90′ · +5",
+  hockey "To win" / "Win in 60′ · +5", rows show "(in 60′)"). Winner flags on
+  `/matches` were already sport-neutral (draw + final winner both green on OT/SO).
+  Hockey status label on an OT/SO game: "Draw after 60′ · TPS won in OT" (or "in
+  SO"). Hockey intro step rewritten; its localStorage key is now
+  `fb-intro-dismissed-hockey-v2`. `isUnderdogHit()` needs no change (the ft_winner
+  baseline of 15 holds for hockey). **Crowd facts in `/stats` key off `result`, so
+  for hockey an OT/SO game now counts as a win for the winner, not a draw**
+  (crowd accuracy, biggest upset, "actual draw %" all shift; deliberately left, same
+  as the WC note above). One-off script `supabase/scripts/resettle_liiga_ot.sql`
+  un-settles settled `liiga-2027` games with `et_team1 IS NOT NULL` (reverses
+  balances, resets bets, sets `status='closed'`, `settled_at`/`result`/`result_ft`
+  NULL — result is cleared so a failed feed tick can't re-settle on the stale
+  `draw`). Dry run 2026-10-16: 21 games, 36 bets, 4 players, net −120 pts to reverse,
+  0 ft_winner bets. **Manual steps, in order:** (1) apply the migration; (2) deploy
+  (push to `main` → Vercel); (3) paste `resettle_liiga_ot.sql` into the SQL editor
+  (dry-run SELECT is in its header); (4) trigger `/api/sync` (cron-job.org "Run now").
+  Running the script before the deploy would let the old parser re-settle the same
+  wrong way. See `docs/HISTORY.md`.
 
 ## Cron setup (DONE — reference only)
 1. Go to https://cron-job.org, sign up / log in.
@@ -577,15 +609,18 @@ tricks. Explain non-obvious Next.js / Supabase choices inline.
   in Status / the invariants section.
 - **Underdog bonus: +5** if the player's picked outcome got **fewer than 33%** of all
   bets placed on that match (correct underdog pick = **15** total).
-- **"Wins in 90′" bonus: +5** (knockout team picks only) — a player may upgrade a team
+- **"Wins in 90′" bonus: +5** (knockout team picks only; hockey's equivalent is "Win in
+  60′", below) — a player may upgrade a team
   pick to predict that team is *ahead at full time* (90 min). Graded strictly on
   `result_ft`: correct = +15 (or +20 with the underdog bonus), but it loses if the team
   only advanced via extra time/penalties. Draw and group matches don't offer it. See the
   2026-06-30 PR2 Status entry.
 - **Wrong pick: −5 points.**
 - Balances may go negative — intended.
-- **Hockey:** graded on the 60-minute (regulation) result — a regulation tie is a
-  `draw` whatever happens in OT/shootout. No "wins in 90′" mode.
+- **Hockey:** same model as a WC knockout. A team pick wins if that team wins at all
+  (60′, OT or shootout); a `draw` pick wins if it was tied after 60′ — so an OT/SO game
+  pays both. **"Win in 60′" (+5)** is the strict team pick, graded on the 60-min result
+  only (+15 / +20 with underdog; loses if the team only won in OT/SO).
 
 ## Hard rules / invariants
 - A bet may be placed ONLY while match.status = 'scheduled' AND now() < kickoff_at.
@@ -643,6 +678,12 @@ step-by-step build log:
 - One-off data-fix SQL (not schema changes) lives in `supabase/scripts/`, NOT
   `supabase/migrations/`. `supabase db push` only runs `migrations/`, so these
   are pasted into the SQL editor by hand (e.g. `resettle_knockout_matches.sql`).
+- `UPDATE … FROM` with several source rows per target row applies only ONE of them
+  (Postgres picks one arbitrarily). When reversing balances across many bets, sum per
+  player in a subquery first (see `resettle_liiga_ot.sql`). The older
+  `resettle_knockout_matches.sql` did NOT do this, so players with several settled
+  knockout bets had only one reversed (2026-06-30) — `profiles.points_balance` may be
+  off for them; harmless today since no page displays it.
 - Re-grading already-settled matches: `settle_match` skips `status='settled'`
   (idempotent), so to re-score finished matches you must first un-settle them —
   reverse each bet's `points_awarded` out of the balance, reset
