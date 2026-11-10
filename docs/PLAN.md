@@ -48,7 +48,7 @@ optimize for simplicity and zero running cost, not for scale or security hardeni
 | Framework | Next.js | Most mainstream full-stack React framework — biggest community = easiest to get unstuck. Owner is new to it; mainstream matters. |
 | Hosting | Vercel | Zero-config Next.js deploys from a GitHub push. Free tier covers this scale comfortably. |
 | Database | Supabase (Postgres) | Postgres + auth + realtime in one free service. Realtime is handy for a live-updating scoreboard. |
-| Auth | Supabase Auth (magic link) | Family-and-friends scope: passwordless email is plenty, no password handling. |
+| Auth | Supabase Auth (magic link + Google OAuth) | Family-and-friends scope: passwordless email is plenty, no password handling. |
 | Match data | openfootball worldcup.json | Free, public-domain JSON. No API key, no rate limits. Synced every 5 minutes; the same job auto-settles finished matches. |
 | Scheduling | External cron (cron-job.org) → `/api/sync` | Vercel Hobby cron is **once-per-day only**; sub-daily is Pro ($20/mo). So the sync+settle lives in a normal API route, triggered by a free external scheduler every 5 minutes (reduced from every 2–3h on 2026-06-14 — cron-job.org's free tier supports down to 1-minute intervals). Route is protected by a shared secret. |
 | Odds | None — fixed-points scoring | Owner has no football knowledge; the points model needs none. Going against the crowd and being right earns a bonus, automatically, with no oddsmaking. |
@@ -109,8 +109,8 @@ game is extended. Don't start on any of these without being asked.
   predicting who advances, bracket-wide scoring).
 - ~~**Analysis tab**~~ — **DONE (2026-06-29)**, no longer a backlog idea. Shipped as the
   `/stats` tab (You / The Crowd / Records sections — personal stats, crowd fun-facts, and
-  league-wide superlatives). All derived from existing data, no migration. See `CLAUDE.md`
-  ("Status") and `docs/HISTORY.md`.
+  league-wide superlatives). All derived from existing data, no migration. See
+  `docs/HISTORY.md`.
 - **Real bookmaker odds** — listed in "Deferred (not v1)" above but intentionally
   permanent: the fixed-points model removes the need, so this stays out of scope.
 - **Guard against orphaned match rows.** `buildExternalRef` keys a match by

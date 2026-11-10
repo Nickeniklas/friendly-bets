@@ -11,7 +11,7 @@ Extra game data per user. Supabase Auth owns `auth.users`; this hangs off it.
 |---|---|---|
 | id | uuid (PK) | = auth.users.id |
 | display_name | text | shown on leaderboard |
-| points_balance | int | running points total across ALL competitions; starts at 0, may go negative. Still written by `settle_match`, but no page displays it since 2026-09-18 — standings are per-competition sums of `bets.points_awarded` |
+| points_balance | int | running points total across ALL competitions; starts at 0, may go negative. Still written by `settle_match`, but no page displays it (`/` redirects to `/matches`) — standings are per-competition sums of `bets.points_awarded` |
 | created_at | timestamptz | default now() |
 | last_bonus_date | date | null until first claim; UTC date of last daily-bonus claim |
 | streak_count | int | consecutive daily-bonus claims, capped at 7; default 0 |
@@ -131,6 +131,10 @@ balance/stake check anymore (the old `deduct_stake_on_bet` trigger has been drop
 `UNIQUE (user_id, match_id)` keeps it to one prediction per player per match.
 
 ### accuracy — a VIEW, not a table
+The view still exists, but the app no longer reads it: leaderboard and stats compute
+accuracy in JS from settled bets, per competition, and it shows as columns in the one
+leaderboard table (there is no separate accuracy leaderboard). Definition:
+
 Derive from `bets` + `matches` so it can never drift:
 - bets_placed = count of settled bets (outcome `won`/`lost`)
 - correct = count where outcome = `won` (pick matched match.result — includes

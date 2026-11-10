@@ -1,10 +1,630 @@
 # HISTORY — build log
 
-Detailed, chronological record of how v1 (`docs/PLAN.md` steps 1-8, plus
-post-v1 polish) was built. `CLAUDE.md` keeps only the current-state summary;
-this file is the full story, kept for reference — not required reading to
-continue work, but useful if you need to know *why* something is the way it
-is.
+Detailed record of how v1 (`docs/PLAN.md` steps 1-8, plus post-v1 polish) was
+built. `CLAUDE.md` keeps only the current-state summary; this file is the full
+story, kept for reference — not required reading to continue work, but useful if
+you need to know *why* something is the way it is.
+
+It opens with the status entries moved out of CLAUDE.md on 2026-11-10, **newest
+first**; everything after that block is chronological (oldest first).
+
+## Status entries moved from CLAUDE.md (2026-11-10)
+
+Moved verbatim from CLAUDE.md's old `## Status (as of 2026-10-16)` section and a few
+dated lines elsewhere in that file, so CLAUDE.md can hold only the current state.
+Grouped by date, **newest first** (the rest of this file is oldest first). Where an
+entry carried no date of its own, the date is taken from its commit and marked
+"(date from commit)". Cross-references like "see below" / "see Status" point at the
+old CLAUDE.md layout.
+
+### 2026-10-16
+
+Old Status header (demoted from `##` to `####`) and snapshot bullets:
+
+#### Status (as of 2026-10-16)
+**v2 is complete and live** at `https://friendly-bets-rust.vercel.app`. All of
+`docs/PLAN.md`'s build order (steps 1-8) is DONE. **The active competitions are now
+the NHL 2026–27 (the default) and Liiga 2026–27 regular seasons (ice hockey)**; the
+finished World Cup stays selectable — see the 2026-09-18 "Liiga" and 2026-10-16 "NHL"
+entries at the end of this list.
+
+- Supabase schema, RPC (`settle_match`), `accuracy` view, RLS, and GRANTs are applied.
+- `/api/sync` is deployed, protected by `SYNC_SECRET`, and triggered every 5 minutes by
+  cron-job.org (syncs fixtures/results and auto-settles finished matches — NHL since
+  2026-10-16, Liiga since 2026-09-18, loaded in parallel; openfootball for the WC
+  before that). cron-job.org times the
+  run out at 30 s, so every upstream feed fetch is capped at `UPSTREAM_TIMEOUT_MS`
+  (8 s, `src/lib/openfootball.ts`); a timed-out feed is skipped, the rest of the
+  run (other feeds + settlement) still happens, and the response is a 504
+  `{ error: "upstream timeout", feed: "liiga", … }` (2026-10-16).
+- Magic-link auth (`/login`, `/auth/confirm`, sign-out) works via custom SMTP (Brevo).
+- `/matches` splits all fixtures into Upcoming/Live/Past tabs, date-grouped under sticky
+  headers, with a three-way pick (home/draw/away) per bettable match and a crowd-split
+  (% of picks per outcome) display. Kickoff times are shown in Finnish time.
+- `/leaderboard` shows a points podium (top 3) plus one sortable all-players table
+  (points, bets, correct, wrong, win %, streak).
+- Vercel Web Analytics is enabled.
+
+- **Hockey OT/SO grading + "Win in 60′" (2026-10-16)** — under the old parser
+  (`result = result_ft` = regulation) a pick on the team that won in OT/SO always
+  lost. Liiga now reuses the WC knockout model, **`settle_match` unchanged**:
+  `src/lib/liiga.ts` sets `result` = the **final** winner (sum of all periods incl.
+  the shootout decider = the API's `goals`) and `result_ft` = the regulation result.
+  So on 2–2 after 60, home wins in OT: standard `team1` wins, `draw` wins, `team2`
+  loses, ft_winner `team1` loses. New migration `20261016000000_hockey_ft_winner.sql`
+  lets `enforce_bet_window` accept `ft_winner` when the match's competition is
+  `sport = 'hockey'` (joins `competitions`; team-picks-only CHECK untouched),
+  mirrored by `strictModeAvailable(sport, stage)` in `src/lib/competitions.ts`.
+  `match-card.tsx`'s `isKnockout` prop became `strictModeAvailable` + `sport`; copy
+  per sport via `STRICT_MODE_COPY` (football "To advance" / "Win in 90′ · +5",
+  hockey "To win" / "Win in 60′ · +5", rows show "(in 60′)"). Winner flags on
+  `/matches` were already sport-neutral (draw + final winner both green on OT/SO).
+  Hockey status label on an OT/SO game: "Draw after 60′ · TPS won in OT" (or "in
+  SO"). Hockey intro step rewritten; its localStorage key is now
+  `fb-intro-dismissed-hockey-v2`. `isUnderdogHit()` needs no change (the ft_winner
+  baseline of 15 holds for hockey). **Crowd facts in `/stats` key off `result`, so
+  for hockey an OT/SO game now counts as a win for the winner, not a draw**
+  (crowd accuracy, biggest upset, "actual draw %" all shift; deliberately left, same
+  as the WC note above). One-off script `supabase/scripts/resettle_liiga_ot.sql`
+  un-settles settled `liiga-2027` games with `et_team1 IS NOT NULL` (reverses
+  balances, resets bets, sets `status='closed'`, `settled_at`/`result`/`result_ft`
+  NULL — result is cleared so a failed feed tick can't re-settle on the stale
+  `draw`). Dry run 2026-10-16: 21 games, 36 bets, 4 players, net −120 pts to reverse,
+  0 ft_winner bets. Rollout order was: (1) apply the migration; (2) deploy (push to
+  `main` → Vercel); (3) paste `resettle_liiga_ot.sql` into the SQL editor (dry-run
+  SELECT is in its header); (4) trigger `/api/sync`. Running the script before the
+  deploy would let the old parser re-settle the same wrong way. **DONE 2026-10-16** —
+  all four steps run; verified live: all 21 `liiga-2027` OT/SO games are settled
+  again with `result_ft = draw`, and their 36 bets re-graded (19 won, 17 lost). See
+  `docs/HISTORY.md`.
+
+- **NHL 2026–27 (2026-10-16)** — a second hockey competition, inheriting every hockey
+  feature through `sport` (no page or trigger change needed). Migration
+  `20261016120000_nhl_competition.sql` = one INSERT (`nhl-2027`, hockey, active,
+  `sort_order 0` → default + first in the dropdown). Parser `src/lib/nhl.ts`
+  (`api-web.nhle.com/v1/schedule/{date}`, 4 parallel 7-day windows today−14…+13,
+  `gameType = 2` only, `external_ref = nhl-{id}`, team1 = home, names =
+  `commonName.default`, "Week N" = Monday weeks in Helsinki time from 2026-09-28).
+  The feed has no periods, so regulation is reconstructed from `lastPeriodType`: OT/SO
+  → ft = loser–loser, `result_ft = draw`, result = winner, et = final (OT) or p = 1–0
+  (SO); a non-one-goal OT/SO margin is logged and left ungraded. `/api/sync` feeds
+  now load in parallel. Logos: `scripts/copy-nhl-logos.mjs` → `public/teams/nhl/*.svg`
+  (light + dark) + generated `src/lib/team-logos-nhl.ts`; the Liiga map moved to
+  `src/lib/team-logos-liiga.ts`, and `teamLogo(competition, team)` in
+  `src/lib/team-logos.ts` scopes lookups per competition (`Flag` now takes
+  `competition`). Committed in `4d644a9`. Rollout order was: (1) apply the
+  migration; (2) deploy (push to `main`); (3) trigger `/api/sync` — the migration
+  must land first: an NHL row with an unknown competition id fails the FK and with it
+  the whole combined upsert (Liiga included) for that tick. **DONE 2026-10-16** —
+  migration applied, deployed, first sync ran; verified live: 197 `nhl-2027` rows,
+  102 settled (no bets on them, so no points moved). The UI hasn't been eyeballed
+  in a browser yet. See `docs/HISTORY.md`.
+
+### 2026-09-20
+
+- **Weekly leaderboard periods for hockey (2026-09-20)** — the leaderboard pills,
+  `/stats`' "biggest single-round haul" record and the "You" accuracy breakdown
+  used to group by `matches.stage`, which gave Liiga one "Regular season" bucket
+  that duplicated All time. They now group by a per-competition **period**, chosen
+  from `competitions.sport`: football → `stage` (unchanged), hockey →
+  `matches.group_label` ("Week N", already written by `src/lib/liiga.ts`), ordered
+  newest week first; an unknown sport falls back to football. **No migration, no
+  parser change.** Helpers `periodKey` / `periodLabel` / `orderPeriodKeys` /
+  `periodNoun` live in `src/lib/stats.ts` beside `STAGE_LABELS`/`STAGE_ORDER`.
+  `computePersonalStats` and `computeRecords` now take `sport` as their first
+  argument, `PersonalStats.byStage` is `byPeriod` (`PeriodStat`), and `StatsBet`
+  carries `group_label`; the leaderboard + stats selects fetch `group_label` too.
+  UI copy follows `periodNoun(sport)` ("Accuracy by week", "Biggest single-week
+  haul"), and the leaderboard's empty state now says "in this period". See
+  `docs/HISTORY.md`.
+
+### 2026-09-18
+
+- Views switched to `security_invoker` (2026-09-18) — the Supabase Security
+  Advisor flagged `accuracy` and `match_bet_counts` as CRITICAL "Security Definer
+  View" (views run as their owner by default, bypassing RLS on the underlying
+  tables). Nothing leaked — both only read `bets`/`profiles`, which are already
+  public-read — but migration `20260918000000_views_security_invoker.sql` now sets
+  `security_invoker = on` on both, so they respect the caller's grants + RLS. No
+  app code change. Verified logged out: anon sees the same row counts as service
+  role, and `/matches`, `/leaderboard`, `/stats` render real data with no errors.
+  See the "views" gotcha below.
+
+- **Liiga 2026–27 + competition selector (2026-09-18)** — the app is now
+  multi-competition. Migration `20260918120000_competitions.sql`: new
+  `competitions` table (`id`, `name`, `sport`, `is_active`, `sort_order`; seeded
+  `liiga-2027` hockey active / `wc2026` football inactive), `matches.competition`
+  FK (WC rows backfilled), and the bet-window trigger's `ft_winner` check is now an
+  allow-list of WC knockout stages. The selected competition is the `fb-competition`
+  cookie (`getSelectedCompetition()` in `src/lib/competitions.ts`), switched by a
+  header dropdown (`src/components/competition-select.tsx` →
+  `src/lib/competition-actions.ts`). `/matches`, `/leaderboard`, `/stats` filter
+  everything by it; standings/points are summed from that competition's settled
+  bets — **`profiles.points_balance` is a cross-competition total now and is no
+  longer displayed anywhere** (settle_match still writes it). Liiga data comes from
+  `src/lib/liiga.ts` (liiga.fi's public `/api/v2/games`, `external_ref =
+  liiga-{id}`), graded on the **60-minute result** (`result = result_ft` =
+  regulation outcome, so a regulation tie is a `draw`; settle_match unchanged).
+  `/api/sync` now syncs a `feeds` list (just Liiga; openfootball no longer fetched,
+  code kept), and a failing feed is logged + skipped without failing the run. For an
+  active competition `/matches` shows ±14 days only. Hockey display keys off
+  `sport`: OT/SO score notes, "Draw after 60′", 🏒 icon, extra intro-card rule, no
+  "Win in 90′" (now `isKnockoutStage()`, not `stage !== 'group'`). **Grading
+  superseded 2026-10-16:** OT/SO winners now win too, plus a "Win in 60′" mode (see
+  the entry at the end of this list). Committed in
+  `78dbca4`; migration applied, `/api/sync` run, and confirmed working live by the
+  owner (2026-09-18). See `docs/HISTORY.md`.
+
+- **Liiga display tweaks (2026-09-18, after the launch)**: (1) the hockey score
+  headline on Past cards is now always the **60-minute score** (`ft_*`), matching
+  how picks are graded. The note shows the final: "3–2 OT", or "5–4 SO" (=
+  regulation + the `p_*` shootout decider); `matchScore()` in
+  `src/app/matches/page.tsx`. (2) Real Liiga club logos next to team names:
+  `Flag` falls back to `TEAM_LOGOS` (`src/lib/team-logos.ts`, generated along with
+  `public/teams/*` by `node scripts/copy-team-logos.mjs`; never hotlink the
+  liiga.fi CMS URLs). Lukko has a dark-theme variant, switched via `dark:` classes.
+  In dark mode, logos without a dark variant sit on a near-white circle so black
+  logos (TPS) stay visible. Re-run the script when a team is promoted. (3) One
+  sport-neutral icon everywhere, all generated by `scripts/make-app-icons.mjs`:
+  tab (`src/app/icon.svg` + `favicon.ico`), iOS (`src/app/apple-icon.png`,
+  opaque), and manifest (`public/icons/icon-*` = any, `maskable-*` = maskable).
+  Plus `src/app/manifest.ts` (standalone, `start_url` `/matches`) and
+  `appleWebApp` metadata in the root layout. The football icon is gone. See
+  `docs/HISTORY.md`.
+
+### 2026-07-18
+
+- Orphaned placeholder matches deleted (2026-07-18) — **data fix only, no code
+  change.** `/matches` was showing FOUR cards for the last two fixtures: the real
+  `wc2026-m103` (France vs England) and `wc2026-m104` (Spain vs Argentina), plus
+  two ghost cards "L101 vs L102" and "W101 vs W102". Cause: `buildExternalRef`
+  keys a match by `wc2026-m{num}` if the feed gives it a `num`, else by
+  `{date}-{team1}-{team2}`. openfootball originally listed the third-place and
+  final matches with NO `num` and bracket-placeholder team names, so they synced
+  in as `2026-07-18-l101-l102` / `2026-07-19-w101-w102`; when the feed later added
+  `num: 103`/`104` + real names, the sync inserted NEW rows under the num key and
+  the old ones were orphaned (never matched by the feed again → never updated,
+  never settled, but still `status='scheduled'` with a future kickoff, so they
+  rendered as bettable cards). Fixed by deleting the two rows via
+  `supabase/scripts/delete_orphan_placeholder_matches.sql`; the one prediction
+  sitting on the ghost third-place card went with it via `bets.match_id`'s ON
+  DELETE CASCADE. **No scoreboard impact** — that bet had `outcome = NULL`, and
+  both the `accuracy` view and `/stats` filter to `outcome IN ('won','lost')`, so
+  it was never counted in points/win%/streak; it only fed `match_bet_counts` (the
+  crowd-split % on the ghost card itself). Verified after: 32 knockout rows, 104
+  total match rows (= the feed exactly), 0 remaining non-num-keyed knockout rows,
+  affected player's balance unchanged. See the "dual keying" gotcha below.
+
+Original "dual keying" gotcha wording (CLAUDE.md Gotchas):
+
+- **That dual keying can orphan rows** (bit us 2026-07-18, see Status). The branch
+  taken depends on whether the feed supplies `num` *at the moment of that sync* — so
+  if openfootball later ADDS a `num` to a match that previously had none, its
+  external_ref changes, and the next sync inserts a brand-new row while the old one
+  becomes an orphan: nothing in the feed matches it again, so it's never updated and
+  never settles, yet it stays `status='scheduled'` and renders as a live, *bettable*
+  card with placeholder team names. That's exactly how the ghost "L101 vs L102" /
+  "W101 vs W102" cards appeared for the third-place match + final. If odd/duplicate
+  fixtures ever show up again, the check is: any knockout row whose `external_ref`
+  doesn't match `^wc2026-m\d+$` is a suspect orphan. Cleanup = delete the row (bets
+  cascade). No automatic guard exists — deliberately, since the tournament ended
+  before one was worth the risk; see `docs/PLAN.md` v3 ideas.
+
+### 2026-07-01
+
+- Match scores + pick/winner separation (2026-07-01) — `/matches` Past tab now
+  shows the real score ("2 – 1" + "(a.e.t.)"/"pens" note) via new display-only
+  `matches` columns (`ft_/et_/p_team1`/`2`, migration `20260702000000_match_scores.sql`)
+  parsed from the feed's `score.ft/et/p`. These are never graded and are excluded
+  from `/api/sync`'s result "freeze" (so they update every sync + backfill settled
+  matches). Also split `OutcomeButton`'s `flagged` into `isWinner`/`isUserPick`:
+  green = winner/selection only, the user's pick gets a neutral "Your pick" chip
+  (fixes a.e.t. knockouts where pick+draw+advancer all looked green). **Manual:**
+  apply migration, then run `/api/sync` once to backfill scores.
+
+### 2026-06-30
+
+- Knockout draw-pick scoring fix (2026-06-30) — **PR1 of a two-part change.**
+  Bug: openfootball resolves a knockout tie by penalties > extra time > full
+  time, so a match level after 90 min was stored with `result` = the advancing
+  team (never `draw`); `settle_match` graded `pick = result`, so a `draw` pick on
+  any knockout that went to ET/penalties ALWAYS lost — a real R32 draw pick was
+  wrongly marked wrong. Fix ("Option B"): a new `matches.result_ft` column stores
+  the **full-time (90-min) result only** (`team1`/`draw`/`team2`; for the group
+  stage it equals `result`, for a knockout decided in ET/pens it is `draw`), and
+  a pick now wins if `pick = result OR pick = result_ft`. So on a 1-1 knockout
+  won by team1 on penalties: `draw` wins (matches `result_ft`) AND `team1` wins
+  (matches `result`, they advanced); `team2` loses. The **underdog bonus is now
+  per picked outcome** (a correct pick gets +5 if *its own* outcome drew <33% of
+  the match's bets) since two outcomes can win — for a single-winner match this
+  is identical to the old rule. Files: migration
+  `20260630000000_full_time_result.sql` (adds `result_ft`, backfills =`result`,
+  rewrites `settle_match`); `src/lib/openfootball.ts` (`parseFullTimeResult`,
+  `result_ft` on `MatchRow`); `src/app/api/sync/route.ts` (freeze `result_ft` too
+  for settled matches); `src/app/matches/page.tsx` (selects `result_ft`, flags
+  both advancer + draw as winners, "(a.e.t.)" status label). Personal stats and
+  the `accuracy` view derive correctness from `bets.outcome`, so they self-correct
+  after re-settlement — no change needed. **Crowd facts in
+  `src/lib/stats.ts`/`/stats` still key off `result` (the advancer), not
+  `result_ft`** — a known minor inconsistency, deliberately left for now. **Manual
+  steps:** (1) apply the migration; (2) run the one-off
+  `supabase/scripts/resettle_knockout_matches.sql` (un-settles already-settled
+  knockout matches so they re-grade — group stage untouched, it's a no-op there);
+  (3) trigger `/api/sync` (cron-job.org "Run now" or wait 5 min) to repopulate
+  `result_ft` from the feed and re-settle.
+
+- Knockout "wins in 90 min" bet mode (2026-06-30) — **PR2, done.** On knockout
+  matches a TEAM pick can be upgraded to "wins in 90′": graded strictly on the
+  full-time result (`pick = result_ft`), worth +5 on top, so a correct 90-min
+  call is +15 (or +20 with the underdog bonus); it LOSES if the team only won in
+  ET/penalties. The standard pick ("to advance") is unchanged (wins via 90′ OR
+  ET/pens). Mode is **team-picks-only** (a draw is already a full-time concept)
+  and **knockout-only** (group matches have no ET, so the bonus would be free).
+  New `bets.ft_winner boolean DEFAULT false` (migration
+  `20260701000000_ft_winner_pick.sql`) with a CHECK that it's only true for team
+  picks; the `enforce_bet_window` trigger now also rejects `ft_winner` on
+  group-stage matches; `settle_match` rewritten to grade ft_winner picks
+  strictly and add the +5. UI: a two-option toggle ("To advance" / "Win in 90′
+  · +5") appears in the confirm panel of `match-card.tsx` for knockout team
+  picks (`isKnockout` prop from `page.tsx`, which also reads `ft_winner` back for
+  the confirmed/result rows — shown as "(in 90′)"). `placeBet`
+  (`matches/actions.ts`) takes an `ftWinner` form field. **Stats impact:** the
+  old "underdog hit = `points_awarded === 15`" heuristic broke (a correct
+  non-underdog 90-min pick is also 15, a correct underdog 90-min pick is 20), so
+  `src/lib/stats.ts` got `isUnderdogHit()` (won && points === baseline+5, where
+  baseline is 15 for ft_winner else 10) and `StatsBet`/`/stats` carry `ft_winner`
+  now. **Manual step:** apply `20260701000000_ft_winner_pick.sql` (adds the
+  column + constraint + trigger/RPC changes).
+
+Original `UPDATE … FROM` gotcha wording (CLAUDE.md Gotchas):
+
+- `UPDATE … FROM` with several source rows per target row applies only ONE of them
+  (Postgres picks one arbitrarily). When reversing balances across many bets, sum per
+  player in a subquery first (see `resettle_liiga_ot.sql`). The older
+  `resettle_knockout_matches.sql` did NOT do this, so players with several settled
+  knockout bets had only one reversed (2026-06-30) — `profiles.points_balance` may be
+  off for them; harmless today since no page displays it.
+
+### 2026-06-29
+
+- Stats / data analysis tab (2026-06-29) — a third tab `/stats` "for the
+  curious", merged to `main`. It mirrors the leaderboard's server-compute →
+  client-switch pattern: `src/app/stats/page.tsx` (server) does one
+  `Promise.all` fetch (settled `bets` joined to `matches` + `profiles`, the
+  `match_bet_counts` view joined to `matches`, `profiles`, and `getUser()`),
+  flattens the joins, and runs pure aggregations, then hands three precomputed
+  `ReactNode` sections to `src/components/stats-view.tsx` (`StatsView`, a
+  sticky pill switcher like `MatchesTabs`). The three sections:
+  **You** (login-gated; guests get a login-CTA card) — overview tiles
+  (points/rank/win%/current+best streak/predictions), accuracy-by-stage bars,
+  home/draw/away pick tendencies, a with-vs-against-the-crowd contrarian record
+  + underdog calls landed (`points_awarded === 15`), percentile standing, and
+  best/worst calls; **The Crowd** (public) — wisdom-of-the-crowd accuracy %,
+  biggest upset, most divisive / strongest-consensus match, a draw-shyness
+  comparison, and the most-backed team; **Records** (public) — longest streak,
+  biggest single-round haul, best underdog hunter, most accurate, most
+  predictions, sharpest contrarian (rate-based records need ≥5 settled bets to
+  qualify). **Superseded 2026-09-20:** the accuracy-by-stage bars and the haul
+  record now group by *period* (a game week for hockey) — see the entry at the
+  end of this list. All aggregation lives in the new **`src/lib/stats.ts`** (pure, no
+  React/Supabase — `computePersonalStats` / `computeCrowdFacts` /
+  `computeRecords` plus shared types); the formulas match the `accuracy` view
+  (points = Σ points_awarded, win% = round(correct/total*1000)/10). The
+  previously-duplicated `STAGE_LABELS` / `STAGE_ORDER` / `related()` were moved
+  into `stats.ts` and are now imported by **both** `stats/page.tsx` and
+  `src/app/leaderboard/page.tsx`. `src/components/bottom-nav.tsx` gained the
+  third 📊 Stats tab (the `flex-1` columns handle three items unchanged).
+  **No DB migration** — every stat derives from existing tables/views, all
+  already readable by anon/authenticated, so the Crowd + Records sections work
+  logged-out. See `docs/HISTORY.md`.
+
+### 2026-06-28
+
+- Guest sign-in discoverability (2026-06-28) — two small UI changes from real
+  use, no DB/auth-flow change: (1) the "View matches as guest →" link on
+  `/login` (`src/app/login/page.tsx`) moved from the bottom of the card up to
+  **directly under the Google button**, restyled from muted underline text to
+  a full-width bordered button (`--surface-2` bg, green border/text on hover)
+  so it's easy to spot; (2) the shared `AppHeader`
+  (`src/components/app-header.tsx`) now shows a green **"Log in"** link (→
+  `/login`) in the same right-side slot as `SignOutButton`, rendered whenever
+  `loggedIn` is false — so a guest who lands straight on `/matches` (e.g. via a
+  shared link) has an obvious way to sign in. Both `/matches` + `/leaderboard`
+  already pass `loggedIn={!!user}`. Committed in `bff8957` (guest-link move,
+  alongside the period selector) and `bac9625` (navbar Log in button). See
+  `docs/HISTORY.md`.
+
+### 2026-06-23
+
+- Leaderboard period selector (2026-06-23) — `/leaderboard` gained a segmented
+  pill selector above the podium that re-scopes **both the podium and the
+  table** to a chosen period: **All time** (default), **Last 10** (each
+  player's most recent 10 settled bets = recent form), and one pill per
+  **tournament round** (`group`/`r32`/…/`final` → "Group stage"/"Round of
+  32"/…) that has any settled bets. Round pills appear automatically as the
+  sync job settles each round — no empty future-round pills are shown. New
+  client component `src/components/leaderboard-view.tsx` (`LeaderboardView`)
+  holds the selected-period state and switches instantly with no refetch
+  (mirrors the precomputed-content pattern of `matches-tabs.tsx`); the podium
+  for each period is a server-rendered `ReactNode` passed in as a prop, so
+  `PodiumColumn`/`PODIUM_CONFIG` stay server-side. **No DB migration** — the
+  round/Last-10 standings are aggregated **in JS, server-side** in
+  `src/app/leaderboard/page.tsx` (`buildStageRows` / `buildRecentRows`) from
+  one extra settled-bets fetch (`bets` joined to `matches(stage)` +
+  `profiles(display_name)`, filtered to `outcome IN ('won','lost')`), reusing
+  the same points/win%/streak formulas as the `accuracy` view. **All time is
+  deliberately left on the existing `profiles.points_balance` + `accuracy`
+  path** (authoritative balance; lists every registered player incl. zero-bet
+  ones) — **superseded 2026-09-18:** All time is now also bets-derived, per
+  competition (see the Liiga entry below) — while the round/Last-10 periods are bets-derived (only players who
+  predicted in that scope) — this intentional difference is noted in code
+  comments. The `bets` table was already publicly readable
+  (`"bets: read all"` + GRANT to anon/authenticated), so no new grant/policy
+  was needed. See `docs/HISTORY.md`. The selector currently renders **above**
+  the podium (it governs the whole view); moving it between podium and table is
+  a one-line change if ever wanted.
+
+### 2026-06-17
+
+- Terminology + stale-label cleanup (2026-06-17) — leftover "bet"-era copy
+  from the staking model was renamed to prediction wording on `/matches`:
+  "Bets open" → "Predictions open", "Log in to bet" → "Log in to predict"
+  (`src/app/matches/match-card.tsx`), and in `src/app/matches/actions.ts` the
+  user-facing strings "Bet placed!" → "Prediction saved!", "Invalid bet" →
+  "Invalid prediction", "Betting is closed for this match." → "Predictions
+  are closed for this match.", "You've already placed a bet on this match." →
+  "You've already predicted this match." The `message.includes("betting is
+  closed")` / `"duplicate key value"` checks were left as-is (they match the
+  raw DB trigger/constraint error text, not user copy). The "Friendly Bets"
+  app name and the leaderboard "Bets" count column were kept. Also removed the
+  dead `Refunded` branch from `ResultRow` (`match-card.tsx`): under the points
+  model a settled prediction is only ever `won`/`lost` (a draw you didn't pick
+  is just a loss — there is no refund anymore; the V2 migration deleted all
+  push/refund logic). `refunded` is a dormant legacy outcome value; if any
+  pre-V2 bet row still carries it, it now renders as a loss line rather than
+  referencing the retired refund concept. **Note on legacy rows:** the V2
+  migration added `bets.points_awarded` with `DEFAULT 0` and did NOT re-settle
+  matches already settled under V1 (settlement is idempotent), so pre-V2
+  settled bets show `0 pts` in the Past tab — stale but harmless. Not cleaned
+  up (no DB migration written); revisit only if those zero rows are confusing
+  in practice.
+
+- Code-review fix batch (2026-06-17) — a full-codebase `/code-review` pass found
+  and fixed one security bug + several correctness/cleanup items (full detail in
+  `docs/HISTORY.md`):
+  - **Security:** `claim_daily_bonus()` was still GRANTed to clients, so a
+    logged-in user could self-award points via direct RPC. Revoked from
+    `authenticated`/`anon`/`PUBLIC` in
+    `20260617000000_disable_daily_bonus_grant.sql` (see the daily-bonus notes
+    above and in the invariants section).
+  - `src/lib/openfootball.ts` `parseKickoffAt` now `console.warn`s on a
+    missing/unparseable/offset-less time instead of silently assuming UTC.
+  - `/api/sync` settle loop no longer aborts the whole batch on one failure
+    (logs + `failed[]`, continues), and now freezes the `result` of
+    already-settled matches before upserting so a feed correction can't desync
+    awarded points from the stored result.
+  - `/auth/confirm` validates `next` via `safeNext()` (must start with a single
+    `/`) to close an open-redirect.
+  - New `match_bet_counts` view (`20260617010000_match_bet_counts_view.sql`)
+    aggregates the crowd-split in Postgres; `/matches` queries it instead of
+    fetching the whole `bets` table. **`/matches` now depends on this view —
+    the migration must be applied or the page errors.**
+  - Shared header extracted to `src/components/app-header.tsx` (`AppHeader`,
+    used by `/matches` + `/leaderboard`).
+
+### 2026-06-16
+
+> **2026-06-16 — model change: parimutuel → accuracy/points.** The staking/pool model
+> was replaced with a fixed-points prediction model (see "Scoring rules" below): no
+> stakes/pools/multipliers; players pick `team1`/`draw`/`team2`; correct = +10 (+5 if the
+> outcome got <33% of bets = underdog), wrong = −5; balances start at 0 and may go
+> negative. Draw is now a first-class pickable outcome. DB changes are in
+> `supabase/migrations/20260616000000_accuracy_points_model.sql` (new `points_awarded`
+> column, `pick` allows `draw`, stake column unused, stake-deduction trigger dropped,
+> `settle_match` rewritten, profiles default 0). **Manual step:** apply that migration
+> (`supabase db push` or paste into the SQL editor) — it also resets all existing
+> balances to 0.
+
+- Daily login bonus — **DISABLED 2026-06-16.** It was a streak-based 100-400
+  point bonus on first page load each UTC day; under the new fixed-points
+  scoring model it just inflated the prediction score, so all wiring was
+  removed: `<DailyBonusToast />` unmounted from the layout, and the
+  `claimDailyBonus()` action + `DailyBonusToast` component deleted. The DB
+  objects are left dormant (never called by app code): the
+  `claim_daily_bonus()` RPC and the `profiles.last_bonus_date` /
+  `streak_count` columns from migration `20260613000000_daily_bonus.sql` still
+  exist. **2026-06-17 — grant revoked:** migration
+  `20260617000000_disable_daily_bonus_grant.sql` REVOKEs EXECUTE on the RPC
+  from `authenticated`/`anon`/`PUBLIC`. Until then the RPC was still GRANTed to
+  `authenticated`, so a logged-in client could call
+  `supabase.rpc('claim_daily_bonus')` directly and self-award 100-400 pts/day,
+  violating the "only settle_match changes balances" invariant. The function +
+  columns are kept (not dropped) so the feature can be re-enabled later by
+  restoring the grant **and** the toast/action wiring. See `docs/HISTORY.md`.
+
+- Google OAuth sign-in added to `/login` alongside magic-link auth
+  (2026-06-16) — see "Google OAuth" below. Same `/auth/confirm` PKCE return
+  path; magic-link flow unchanged. The login buttons (Google + magic-link
+  submit) also got hover/active polish (lift + shadow, matching the
+  match-card interaction) — `src/app/login/google-button.tsx` and
+  `src/app/login/submit-button.tsx`.
+
+- Sign-out + guest access (2026-06-16) — the redesigned `/matches` and
+  `/leaderboard` headers now show a "Sign out" button when logged in
+  (`src/components/sign-out-button.tsx`, a `<form>` wrapping the existing
+  `signOut` action; `/leaderboard` gained a `getUser()` just to gate it). And
+  `/login` got a "View matches as guest" link (both list pages are already
+  public/read-only via RLS).
+
+Original daily-bonus invariant wording (CLAUDE.md Hard rules):
+
+- Daily login bonus (`claim_daily_bonus`) — **DISABLED 2026-06-16.** All app wiring was
+  removed; the RPC + `profiles.last_bonus_date`/`streak_count` columns remain in the DB but
+  dormant (nothing calls them). It inflated the prediction score under the new model. Its
+  EXECUTE grant was revoked from all client roles on 2026-06-17
+  (`20260617000000_disable_daily_bonus_grant.sql`) so it can't be invoked directly either —
+  see the Status note above and `docs/HISTORY.md`.
+
+From CLAUDE.md Gotchas:
+
+- (Historical) `claim_daily_bonus()` was idempotent by design (date-guarded
+  atomic UPDATE) so the now-deleted `DailyBonusToast` could call it on every
+  mount safely. The daily bonus is disabled as of 2026-06-16 (see invariants) —
+  this note is kept only for the idempotent-RPC pattern.
+
+From CLAUDE.md "Google OAuth" (first sentence):
+
+Google sign-in was added alongside (not replacing) magic-link auth — purely
+additive, 2026-06-16. The code: a `GoogleButton` client component
+
+### 2026-06-14
+
+- `/leaderboard` got the matching redesign (commit `4ad4e9a`, 2026-06-14),
+  implemented from the same Claude Design bundle's `Leaderboard.dc.html`:
+  same sticky header (brand + `ThemeToggle`, no balance pill) and bottom nav
+  as `/matches`, and a podium for the top 3 players (gold/silver/bronze
+  circular avatars with initials over medal-colored bases —
+  `PODIUM_CONFIG` in `src/app/leaderboard/page.tsx`). Falls back to no podium
+  if there are fewer than 3 players. New podium color tokens added to
+  `globals.css`: `--gold-bg`, `--gold-text`, `--gold-base-bg`, `--silver-*`,
+  `--bronze-*` (light + dark).
+
+- `/leaderboard`'s ranked list (4th+) and separate accuracy table were later
+  replaced by **one sortable all-players table** (commit `7407268`,
+  2026-06-14) — `src/components/leaderboard-table.tsx` (`LeaderboardTable`,
+  `"use client"`). The podium above is unchanged (still points-only, top 3,
+  not sortable). The table covers every player with columns rank, player,
+  points, bets placed, correct, wrong, win rate %, streak; all six numeric
+  columns are sortable by clicking the header (toggles ascending/descending,
+  ▲/▼ shows the active column; default is points descending), and rank
+  recomputes to match. `src/app/leaderboard/page.tsx` joins `profiles` +
+  the `accuracy` view into one row per player (players with no settled bets
+  default to zeros, since they're absent from `accuracy`) and passes that to
+  `LeaderboardTable`, which sorts entirely client-side — no refetch on
+  re-sort. See `docs/HISTORY.md`.
+
+- `/login` got the matching redesign (commit `117e670`, 2026-06-14),
+  implemented from the same bundle's `Login.dc.html`: centered ⚽ Friendly
+  Bets / World Cup 2026 logo, a "Sign in" card (email input + green "Send
+  magic link →" button, reusing the existing `signInWithMagicLink` action and
+  `SubmitButton` pending-state pattern), the existing spam/timing/
+  double-submit warnings restyled as a "Heads up" card, and a labeled
+  dark/light toggle pill below the card (`src/app/login/theme-toggle-pill.tsx`,
+  `ThemeTogglePill` — same `useTheme` hook as `ThemeToggle`, styled per the
+  design since `/login` has no header). New tokens added to `globals.css`:
+  `--input-bg`, `--warn-bg`, `--warn-border` (light + dark).
+
+- `/matches` kickoff times now display in Finnish time (`Europe/Helsinki`,
+  handles the EET/EEST DST switch automatically) instead of UTC — only the
+  display changed, `kickoff_at` is still stored in UTC. Commit `d92506a`.
+
+- `/matches` is now split into Upcoming/Live/Past tabs (default Upcoming),
+  each date-grouped under sticky headers with a match count and an
+  empty-state message. Upcoming/Live are soonest-first; Past is
+  most-recent-first. New `src/app/matches/matches-tabs.tsx` (`MatchesTabs`)
+  plus `groupByDay()`/`renderMatchCard()`/`renderDayGroups()` helpers in
+  `src/app/matches/page.tsx`. Commit `f75ddf8`. See `docs/HISTORY.md` for
+  details.
+
+- `/matches`' sticky date headers are now a "washi tape" style banner —
+  bold green strip with the date + match count and clipped/angled corners
+  (`clipPath: polygon(...)` in `renderDayGroups()`,
+  `src/app/matches/page.tsx`). Commit `9d9b4bd`.
+
+- Match cards on `/matches` (`match-card.tsx`) got three polish items: a
+  "Bets open" hint bar (shown on any bettable match with no bet yet and no
+  team picked, even before a team is tapped — copy/CTA varies by login
+  state), whole-card + team-button hover effects (`shadow-md`, team buttons
+  also lift via `-translate-y-0.5`), and a "nudge" animation (450ms bounce +
+  green ring on both team buttons, via `@keyframes nudge` in `globals.css`)
+  when tapping anywhere else on a bettable card before picking a team. Commit
+  `290bcc0`.
+
+- Placing a bet on `/matches` no longer causes a full page navigation/scroll-
+  to-top. `placeBet` (`src/app/matches/actions.ts`) returns a
+  `PlaceBetResult` instead of `redirect()`ing; `match-card.tsx` calls it
+  directly from a click handler, shows the result as a self-dismissing toast
+  fixed above the bottom nav, and on success calls `router.refresh()` to
+  re-fetch balance/pool/bet state in place. `place-bet-button.tsx` was
+  deleted (its `useFormStatus` pattern no longer applies — see Gotchas).
+  Commit `f731c44`.
+
+(date from commit `d92506a`, the last redesign commit of 2026-06-14):
+
+All three pages from the Claude Design bundle (`Matches.dc.html`,
+`Leaderboard.dc.html`, `Login.dc.html`) are now implemented and visually
+consistent (shared header/bottom-nav/theme system where applicable). No known
+open bugs and no further UI redesign work is planned — anything else is a v3
+idea (see `docs/PLAN.md` "v3 ideas"), not part of the original plan, don't
+start on these without being asked.
+
+- `src/middleware.ts` was renamed to `src/proxy.ts` (commit `4cb951a`,
+  2026-06-14) — Next.js 16 renamed this file convention from "middleware" to
+  "proxy" (`config.matcher` export unchanged). Purely a naming/convention
+  change, no behavior change. If you see references to "middleware" in older
+  docs/comments, they mean this file.
+
+- `/api/sync`'s cron-job.org schedule was reduced from every 2-3h to every 5
+  minutes (2026-06-14, external config change, no code) — see "Cron setup"
+  below. The openfootball source itself isn't updated live, so this doesn't
+  bring live in-match scores any sooner; the real benefit is that
+  `settle_match` now fires within ~5 minutes of a match crossing the
+  3-hour-post-kickoff threshold, instead of up to ~3h late.
+
+From CLAUDE.md "Cron setup":
+
+   - Schedule: every 5 minutes (reduced from every 2-3h on 2026-06-14 — see
+     "Status" above; cron-job.org's free tier supports down to 1-minute
+     intervals)
+
+### 2026-06-13
+
+(dates from commits `02cd971` and `625864f`):
+
+- `/matches` got a mobile-first visual redesign (commit `02cd971`, merged to
+  `main` 2026-06-13), implemented from a Claude Design mockup
+  (`Matches.dc.html`): sticky header with a points pill + dark/light toggle, a
+  dismissible "How to play" card (`intro-card.tsx`), tap-an-outcome predicting
+  (`match-card.tsx`), read-only confirmed-pick/result rows, and a fixed bottom
+  Matches/Leaderboard tab bar (`bottom-nav.tsx`). The dark/light toggle
+  (default dark) is app-wide — see "Theme" below. **Note (2026-06-16):** the
+  original design's stake mechanics (50/100/200/500pt quick-pick chips +
+  live potential-win estimate) were removed in the move to the fixed-points
+  model — the bet panel is now a three-way Home/Draw/Away pick with no stake.
+
+- `/matches` now shows a small flag next to each team name (`src/components/flag.tsx`,
+  `src/lib/flags.ts`, SVGs in `public/flags/`), or a club logo for Liiga teams
+  (`src/lib/team-logos.ts`, images in `public/teams/`, both generated by
+  `scripts/copy-team-logos.mjs`); see README "Team flags and logos".
+
+### 2026-06-12
+
+(date from commit `a85216a`):
+
+Post-v1 polish:
+- `/login` now shows a persistent reminder (plus a post-submit message) to check
+  spam/junk for the magic-link email, since the Brevo sending address has no domain
+  reputation yet (commit `a85216a`).
+
+### Undated (removed from CLAUDE.md 2026-11-10)
+
+Old `## Build order` section (all steps done; the full table is in `docs/PLAN.md`):
+
+## Build order
+All steps DONE — see `docs/PLAN.md` for the full table and `docs/HISTORY.md` for the
+step-by-step build log:
+1. Supabase schema (tables, RPC, view, RLS) — see SCHEMA.md
+2. openfootball sync + auto-settle (`/api/sync`, cron-job.org)
+3. Next.js skeleton + Supabase client helpers + magic-link auth
+4. Match list page (`/matches`)
+5. Place-pick flow (`placeBet` server action — three-way pick, no stake)
+6. `settle_match` RPC (idempotent, called by the sync job)
+7. Leaderboard + accuracy view (`/leaderboard`)
+8. Polish: crowd-split (% of picks per outcome) display on `/matches`
+
+Stale gotcha from the staking model, removed because nothing is staked or deducted anymore:
+
+- Don't re-deduct loser stakes at settlement; they were taken at placement.
 
 ## Step 1 — Supabase schema, RPC, view, RLS
 DONE. Migrations applied and verified against the live project:
@@ -1179,7 +1799,8 @@ Same server-compute → client-switch pattern as `/leaderboard`:
 > bet mode (PR2), and the 2026-07-01 match-scores change were documented in
 > `CLAUDE.md` ("Status") but never written up here. That gap is left as-is rather
 > than reconstructed after the fact — `CLAUDE.md` is the accurate record for those
-> three.
+> three. (2026-11-10: those CLAUDE.md entries now live verbatim at the top of this
+> file, under "Status entries moved from CLAUDE.md", dates 2026-07-01 and 2026-06-30.)
 
 ## Post-v1 — orphaned placeholder matches deleted (2026-07-18)
 

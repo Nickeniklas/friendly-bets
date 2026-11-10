@@ -43,7 +43,9 @@ exactly why the scoring design needs no oddsmaking).
 - Settlement is automatic: the sync job settles any match with a result, kickoff >3h
   ago, not yet settled. `settle_match` is atomic, idempotent, and the ONLY path that
   changes a balance.
-- A separate accuracy view tracks bets placed / correct / wrong / win rate % / streak.
+- Accuracy (bets placed / correct / wrong / win rate % / streak) shows as columns in the
+  one leaderboard table, computed in JS per competition. The app no longer reads the
+  `accuracy` view.
 - **Hockey (Liiga, NHL)** uses the WC knockout model (since 2026-10-16): `result` = the
   final winner (after OT/shootout), `result_ft` = the 60-minute result. A team pick
   wins if that team wins at all; a `draw` pick wins if it was tied after 60 — so an

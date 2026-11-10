@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 // How long after kickoff a match is eligible for settlement. This MUST stay in
 // sync with settle_match's own guard (`kickoff_at > now() - interval '3 hours'`
-// in supabase/migrations/20260616000000_accuracy_points_model.sql) — the RPC
+// in supabase/migrations/20260701000000_ft_winner_pick.sql, its current definition) — the RPC
 // double-checks the same window and RAISEs if it isn't met. If you change one,
 // change the other, or the job will keep selecting matches the RPC rejects.
 const SETTLE_DELAY_HOURS = 3;

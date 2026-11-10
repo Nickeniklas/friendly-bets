@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
  * Liiga 2026–27 regular season). Every match belongs to one; /matches,
  * /leaderboard and /stats show only the currently selected competition.
  *
- * Adding a new one (e.g. NHL) = insert a `competitions` row + write a feed
+ * Adding a new one (e.g. another league) = insert a `competitions` row + write a feed
  * parser for /api/sync. The pages only read what's here, so they need no
  * changes. Sport-specific display (OT/SO labels, the sport icon) keys off
  * `sport`, never the competition id.
